@@ -1,3 +1,4 @@
+// Package ghrelease provides primitives for fetching and extracting GitHub release assets.
 package ghrelease
 
 import (
@@ -58,6 +59,7 @@ const (
 // ArchiveFormat represents supported archive types.
 type ArchiveFormat string
 
+// Archive format constants
 const (
 	FormatTarGz ArchiveFormat = "tar.gz"
 	FormatTgz   ArchiveFormat = "tgz"

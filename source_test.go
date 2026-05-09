@@ -7,11 +7,11 @@ import (
 
 func TestParseSource(t *testing.T) {
 	tests := []struct {
-		name       string
-		source     string
-		wantOwner  string
-		wantRepo   string
-		wantErr    error
+		name        string
+		source      string
+		wantOwner   string
+		wantRepo    string
+		wantErr     error
 		errContains string
 	}{
 		// Valid formats

@@ -15,7 +15,7 @@ func TestParseChecksumFile(t *testing.T) {
 		errCheck func(error) bool
 	}{
 		{
-			name: "valid single file",
+			name:  "valid single file",
 			input: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  file.txt",
 			want: map[string]string{
 				"file.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
@@ -33,21 +33,21 @@ def0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  file3.txt`,
 			},
 		},
 		{
-			name: "single space separator",
+			name:  "single space separator",
 			input: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 file.txt",
 			want: map[string]string{
 				"file.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
 			},
 		},
 		{
-			name: "uppercase hash normalized to lowercase",
+			name:  "uppercase hash normalized to lowercase",
 			input: "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855  file.txt",
 			want: map[string]string{
 				"file.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
 			},
 		},
 		{
-			name: "mixed case hash",
+			name:  "mixed case hash",
 			input: "E3b0C44298Fc1C149afBf4c8996FB92427ae41E4649b934ca495991b7852B855  file.txt",
 			want: map[string]string{
 				"file.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",

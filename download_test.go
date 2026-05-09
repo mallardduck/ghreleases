@@ -170,7 +170,7 @@ func TestDownloadToBytes(t *testing.T) {
 	testData := []byte("byte slice download")
 	expectedHash := computeSHA256(testData)
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write(testData)
 	}))
@@ -198,7 +198,7 @@ func TestDownloadToBytes(t *testing.T) {
 }
 
 func TestDownloadContextCancellation(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		// Wait for context cancellation
 		<-r.Context().Done()
 	}))
@@ -221,7 +221,7 @@ func TestDownloadLargeFile(t *testing.T) {
 	largeData := bytes.Repeat([]byte("large content "), 10000) // ~130KB
 	expectedHash := computeSHA256(largeData)
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write(largeData)
 	}))
