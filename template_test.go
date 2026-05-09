@@ -25,21 +25,21 @@ func TestRender(t *testing.T) {
 		// Basic variables
 		{
 			name:    "single variable",
-			pattern: "{{.name}}",
+			pattern: "{name}",
 			vars:    vars,
 			mode:    TemplatePermissive,
 			want:    "myapp",
 		},
 		{
 			name:    "multiple variables",
-			pattern: "{{.name}}_{{.version}}_{{.os}}_{{.arch}}.{{.ext}}",
+			pattern: "{name}_{version}_{os}_{arch}.{ext}",
 			vars:    vars,
 			mode:    TemplatePermissive,
 			want:    "myapp_v1.0.0_linux_amd64.tar.gz",
 		},
 		{
 			name:    "variable with literal text",
-			pattern: "download-{{.name}}-{{.version}}.zip",
+			pattern: "download-{name}-{version}.zip",
 			vars:    vars,
 			mode:    TemplatePermissive,
 			want:    "download-myapp-v1.0.0.zip",
@@ -47,21 +47,21 @@ func TestRender(t *testing.T) {
 		// Simple modifiers
 		{
 			name:    "upper modifier",
-			pattern: "{{.name | upper}}",
+			pattern: "{name|upper}",
 			vars:    vars,
 			mode:    TemplatePermissive,
 			want:    "MYAPP",
 		},
 		{
 			name:    "lower modifier",
-			pattern: "{{.os | lower}}",
+			pattern: "{os|lower}",
 			vars:    TemplateVars{OS: "LINUX"},
 			mode:    TemplatePermissive,
 			want:    "linux",
 		},
 		{
 			name:    "title modifier",
-			pattern: "{{.name | title}}",
+			pattern: "{name|title}",
 			vars:    vars,
 			mode:    TemplatePermissive,
 			want:    "Myapp",
@@ -69,77 +69,83 @@ func TestRender(t *testing.T) {
 		// Argument modifiers
 		{
 			name:    "trimprefix modifier",
-			pattern: "{{.version | trimprefix:v}}",
+			pattern: "{version|trimprefix:v}",
 			vars:    vars,
 			mode:    TemplatePermissive,
 			want:    "1.0.0",
 		},
 		{
 			name:    "trimsuffix modifier",
-			pattern: "{{.ext | trimsuffix:.gz}}",
+			pattern: "{ext|trimsuffix:.gz}",
 			vars:    vars,
 			mode:    TemplatePermissive,
 			want:    "tar",
 		},
 		{
 			name:    "replace modifier",
-			pattern: "{{.os | replace:linux=ubuntu}}",
+			pattern: "{os|replace:linux=ubuntu}",
 			vars:    vars,
 			mode:    TemplatePermissive,
 			want:    "ubuntu",
 		},
 		{
 			name:    "replace modifier darwin to macos",
-			pattern: "{{.os | replace:darwin=macos}}",
+			pattern: "{os|replace:darwin=macos}",
 			vars:    TemplateVars{OS: "darwin"},
 			mode:    TemplatePermissive,
 			want:    "macos",
 		},
+		{
+			name:    "replace modifier no match",
+			pattern: "{os|replace:darwin=macos}",
+			vars:    vars,
+			mode:    TemplatePermissive,
+			want:    "linux", // no match, value unchanged
+		},
 		// Complex patterns
 		{
 			name:    "multiple modifiers in pattern",
-			pattern: "{{.name | upper}}-{{.version | trimprefix:v}}-{{.os}}.{{.ext}}",
+			pattern: "{name|upper}-{version|trimprefix:v}-{os}.{ext}",
 			vars:    vars,
 			mode:    TemplatePermissive,
 			want:    "MYAPP-1.0.0-linux.tar.gz",
 		},
-		// Whitespace handling
 		{
-			name:    "modifier with spaces",
-			pattern: "{{.name | upper }}",
-			vars:    vars,
+			name:    "chained modifiers",
+			pattern: "{os|replace:darwin=macos|upper}",
+			vars:    TemplateVars{OS: "darwin"},
 			mode:    TemplatePermissive,
-			want:    "MYAPP",
+			want:    "MACOS",
 		},
 		{
-			name:    "modifier with extra spaces",
-			pattern: "{{.name  |  upper}}",
+			name:    "multiple chained modifiers",
+			pattern: "{version|trimprefix:v|replace:1.0.0=1.0.1}",
 			vars:    vars,
 			mode:    TemplatePermissive,
-			want:    "MYAPP",
+			want:    "1.0.1",
 		},
 		// Permissive mode - unknown variable
 		{
 			name:    "permissive mode - unknown variable",
-			pattern: "{{.unknown}}-{{.name}}",
+			pattern: "{unknown}-{name}",
 			vars:    vars,
 			mode:    TemplatePermissive,
-			want:    "{{.unknown}}-myapp",
+			want:    "{unknown}-myapp",
 			wantErr: nil,
 		},
 		// Permissive mode - unknown modifier
 		{
 			name:    "permissive mode - unknown modifier",
-			pattern: "{{.name | unknown}}",
+			pattern: "{name|unknown}",
 			vars:    vars,
 			mode:    TemplatePermissive,
-			want:    "{{.name | unknown}}",
+			want:    "{name|unknown}",
 			wantErr: nil,
 		},
 		// Strict mode - unknown variable
 		{
 			name:    "strict mode - unknown variable",
-			pattern: "{{.unknown}}",
+			pattern: "{unknown}",
 			vars:    vars,
 			mode:    TemplateStrict,
 			wantErr: ErrUnknownVariable,
@@ -147,7 +153,7 @@ func TestRender(t *testing.T) {
 		// Strict mode - unknown modifier
 		{
 			name:    "strict mode - unknown modifier",
-			pattern: "{{.name | unknown}}",
+			pattern: "{name|unknown}",
 			vars:    vars,
 			mode:    TemplateStrict,
 			wantErr: ErrUnknownModifier,
@@ -155,17 +161,17 @@ func TestRender(t *testing.T) {
 		// Error cases
 		{
 			name:    "invalid replace syntax - no equals",
-			pattern: "{{.name | replace:invalid}}",
+			pattern: "{name|replace:invalid}",
 			vars:    vars,
 			mode:    TemplateStrict,
 			wantErr: ErrInvalidModifier,
 		},
 		{
 			name:    "invalid replace in permissive",
-			pattern: "{{.name | replace:invalid}}",
+			pattern: "{name|replace:invalid}",
 			vars:    vars,
 			mode:    TemplatePermissive,
-			want:    "{{.name | replace:invalid}}",
+			want:    "{name|replace:invalid}",
 			wantErr: nil,
 		},
 		// No variables - plain text
@@ -179,7 +185,7 @@ func TestRender(t *testing.T) {
 		// Empty variable values
 		{
 			name:    "empty variable value",
-			pattern: "{{.name}}-{{.version}}",
+			pattern: "{name}-{version}",
 			vars:    TemplateVars{Name: "app", Version: ""},
 			mode:    TemplatePermissive,
 			want:    "app-",
@@ -265,9 +271,8 @@ func TestApplyModifier(t *testing.T) {
 		{"trimprefix", "v1.0.0", "trimprefix:v", "1.0.0", nil},
 		{"trimsuffix", "file.tar.gz", "trimsuffix:.gz", "file.tar", nil},
 		{"trimprefix no match", "1.0.0", "trimprefix:v", "1.0.0", nil},
-		// Replace modifier
-		{"replace", "darwin", "replace:darwin=macos", "macos", nil},
-		{"replace multiple", "test-test", "replace:test=prod", "prod-prod", nil},
+		// Replace modifier (exact match only, not ReplaceAll)
+		{"replace exact match", "darwin", "replace:darwin=macos", "macos", nil},
 		{"replace no match", "linux", "replace:darwin=macos", "linux", nil},
 		// Error cases
 		{"unknown modifier", "test", "unknown", "", ErrUnknownModifier},

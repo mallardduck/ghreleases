@@ -103,20 +103,22 @@ Dynamically generate asset names using variables and modifiers.
 
 #### Variables
 
-- `{{.name}}` - Binary/application name
-- `{{.version}}` - Release version/tag
-- `{{.os}}` - Operating system (linux, darwin, windows)
-- `{{.arch}}` - Architecture (amd64, arm64, etc)
-- `{{.ext}}` - File extension (tar.gz, zip, etc)
+- `{name}` - Binary/application name
+- `{version}` - Release version/tag
+- `{os}` - Operating system (linux, darwin, windows)
+- `{arch}` - Architecture (amd64, arm64, etc)
+- `{ext}` - File extension (tar.gz, zip, etc)
 
 #### Modifiers
+
+Modifiers are applied with pipe separators and chained left-to-right:
 
 - `upper` - Convert to uppercase
 - `lower` - Convert to lowercase
 - `title` - Capitalize first letter
 - `trimprefix:PREFIX` - Remove prefix
 - `trimsuffix:SUFFIX` - Remove suffix
-- `replace:FROM=TO` - Replace substring
+- `replace:FROM=TO` - Replace exact value (not substring)
 
 #### Examples
 
@@ -131,7 +133,7 @@ vars := ghrelease.TemplateVars{
 
 // Basic template
 name, _ := ghrelease.Render(
-    "{{.name}}_{{.version}}_{{.os}}_{{.arch}}.{{.ext}}",
+    "{name}_{version}_{os}_{arch}.{ext}",
     vars,
     ghrelease.TemplatePermissive,
 )
@@ -139,19 +141,27 @@ name, _ := ghrelease.Render(
 
 // With modifiers
 name, _ := ghrelease.Render(
-    "{{.name | upper}}-{{.version | trimprefix:v}}.tar.gz",
+    "{name|upper}-{version|trimprefix:v}.tar.gz",
     vars,
     ghrelease.TemplatePermissive,
 )
 // Result: MYAPP-1.0.0.tar.gz
 
-// Replace OS name
+// Replace OS name (exact match)
 name, _ := ghrelease.Render(
-    "{{.name}}-{{.os | replace:darwin=macos}}-{{.arch}}",
+    "{name}-{os|replace:darwin=macos}-{arch}",
     TemplateVars{Name: "myapp", OS: "darwin", Arch: "amd64"},
     ghrelease.TemplatePermissive,
 )
 // Result: myapp-macos-amd64
+
+// Chained modifiers
+name, _ := ghrelease.Render(
+    "{os|replace:darwin=macos|upper}",
+    TemplateVars{OS: "darwin"},
+    ghrelease.TemplatePermissive,
+)
+// Result: MACOS
 ```
 
 #### Template Modes
@@ -301,7 +311,7 @@ func main() {
     }
     
     assetName, err := ghrelease.Render(
-        "{{.name}}_{{.version}}_{{.os}}_{{.arch}}.{{.ext}}",
+        "{name}_{version}_{os}_{arch}.{ext}",
         vars,
         ghrelease.TemplatePermissive,
     )
