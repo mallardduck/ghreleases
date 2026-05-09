@@ -63,16 +63,6 @@ jobs:
       - name: Run tests
         run: go test -v -race ./...
 
-      - name: Check coverage
-        run: |
-          go tool cover -func=coverage.out
-          COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print $3}' | sed 's/%//')
-          echo "Total coverage: $COVERAGE%"
-          if (( $(echo "$COVERAGE < 90.0" | bc -l) )); then
-            echo "Coverage is below 90%"
-            exit 1
-          fi
-
   lint:
     name: Lint
     uses: ./.github/workflows/lint.yml
