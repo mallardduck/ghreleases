@@ -158,6 +158,47 @@ func TestRender(t *testing.T) {
 			mode:    TemplateStrict,
 			wantErr: ErrUnknownModifier,
 		},
+		// Failsafe mode - unknown modifier
+		{
+			name:    "failsafe mode - unknown modifier single",
+			pattern: "{os|bogusmod}",
+			vars:    vars,
+			mode:    TemplateFailsafe,
+			want:    "linux",
+			wantErr: nil,
+		},
+		{
+			name:    "failsafe mode - unknown modifier with valid modifier",
+			pattern: "{os|bogusmod|upper}",
+			vars:    vars,
+			mode:    TemplateFailsafe,
+			want:    "LINUX",
+			wantErr: nil,
+		},
+		{
+			name:    "failsafe mode - valid then unknown modifier",
+			pattern: "{os|upper|bogusmod}",
+			vars:    vars,
+			mode:    TemplateFailsafe,
+			want:    "LINUX",
+			wantErr: nil,
+		},
+		{
+			name:    "failsafe mode - unknown variable",
+			pattern: "{unknown}-{name}",
+			vars:    vars,
+			mode:    TemplateFailsafe,
+			want:    "{unknown}-myapp",
+			wantErr: nil,
+		},
+		{
+			name:    "failsafe mode - complex pattern",
+			pattern: "{name|upper}-{version|trimprefix:v|badmod}-{os|replace:linux=ubuntu}.{ext}",
+			vars:    vars,
+			mode:    TemplateFailsafe,
+			want:    "MYAPP-1.0.0-ubuntu.tar.gz",
+			wantErr: nil,
+		},
 		// Error cases
 		{
 			name:    "invalid replace syntax - no equals",

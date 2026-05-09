@@ -24,8 +24,10 @@ var tokenRe = regexp.MustCompile(`\{([^}|]+)(?:\|([^}]*))?\}`)
 //	{os|replace:darwin=macos}-binary
 //	{version|trimprefix:v}
 //
-// In TemplatePermissive mode, unknown variables/modifiers are left as-is.
-// In TemplateStrict mode, unknown variables/modifiers return an error.
+// Mode behavior:
+//   - TemplateStrict: returns error on unknown variables/modifiers
+//   - TemplatePermissive: preserves token unchanged (e.g., {os|bogusmod})
+//   - TemplateFailsafe: ignores unknown modifiers, substitutes variable value (e.g., linux)
 func Render(pattern string, vars TemplateVars, mode TemplateMode) (string, error) {
 	var renderErr error
 	result := tokenRe.ReplaceAllStringFunc(pattern, func(token string) string {
@@ -50,12 +52,18 @@ func Render(pattern string, vars TemplateVars, mode TemplateMode) (string, error
 		if len(m) > 2 && m[2] != "" {
 			for _, mod := range strings.Split(m[2], "|") {
 				var err error
-				value, err = applyModifier(value, mod)
+				newValue, err := applyModifier(value, mod)
 				if err != nil {
 					if mode == TemplateStrict {
 						renderErr = err
+						return token
 					}
-					return token
+					if mode == TemplatePermissive {
+						return token
+					}
+					// TemplateFailsafe: ignore error, keep current value
+				} else {
+					value = newValue
 				}
 			}
 		}

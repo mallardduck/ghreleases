@@ -54,6 +54,10 @@ const (
 
 	// TemplatePermissive passes through unknown vars/modifiers unchanged
 	TemplatePermissive
+
+	// TemplateFailsafe ignores unknown modifiers (returns unmodified value)
+	// but preserves unknown variables as-is
+	TemplateFailsafe
 )
 
 // ArchiveFormat represents supported archive types.
