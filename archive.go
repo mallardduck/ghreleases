@@ -11,6 +11,27 @@ import (
 	"strings"
 )
 
+// ArchiveFormat represents supported archive types.
+type ArchiveFormat string
+
+// Archive format constants
+const (
+	FormatTarGz ArchiveFormat = "tar.gz"
+	FormatTgz   ArchiveFormat = "tgz"
+	FormatZip   ArchiveFormat = "zip"
+	FormatGzip  ArchiveFormat = "gz"
+	FormatPlain ArchiveFormat = "plain" // no archive
+)
+
+// ExtractOptions configures archive extraction behavior.
+type ExtractOptions struct {
+	// Format override (auto-detect from filename if empty)
+	Format ArchiveFormat
+
+	// Specific file path within archive (empty = auto-select single file)
+	ExtractPath string
+}
+
 // Extract extracts content from an archive.
 // Auto-detects format from filename unless opts.Format specified.
 // If opts.ExtractPath set, extracts specific file.

@@ -10,6 +10,21 @@ import (
 	"net/http"
 )
 
+// DownloadOptions configures asset download behavior.
+type DownloadOptions struct {
+	// If set, validates downloaded content against this hash (SHA-256 hex, case-insensitive)
+	ExpectedHash string
+
+	// Context for cancellation (optional)
+	Context context.Context
+}
+
+// DownloadResult contains the outcome of a download operation.
+type DownloadResult struct {
+	Hash string // Computed SHA-256 hex string
+	Size int64  // Bytes downloaded
+}
+
 // Download fetches an asset and writes it to w while computing SHA-256.
 // Always computes hash (returned in result).
 // If opts.ExpectedHash is set, validates before returning.

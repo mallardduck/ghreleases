@@ -9,6 +9,13 @@ import (
 	"time"
 )
 
+// Client handles GitHub API interactions.
+type Client struct {
+	httpClient *http.Client
+	token      string // optional GITHUB_TOKEN
+	baseURL    string // defaults to "https://api.github.com"
+}
+
 // NewClient creates a GitHub API client.
 // Token is optional but recommended to avoid rate limits.
 // If token is empty, tries GITHUB_TOKEN environment variable.
@@ -53,6 +60,19 @@ func (c *Client) LatestRelease(ctx context.Context, owner, repo string) (string,
 	}
 
 	return release.TagName, nil
+}
+
+// Release represents a GitHub release.
+type Release struct {
+	TagName string
+	Assets  []Asset
+}
+
+// Asset represents a downloadable release asset.
+type Asset struct {
+	Name string
+	URL  string // API URL for downloading
+	Size int64
 }
 
 // GetRelease fetches a specific release by tag.

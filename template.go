@@ -9,6 +9,30 @@ import (
 // tokenRe matches {variable} and {variable|modifier1|modifier2|...} template tokens.
 var tokenRe = regexp.MustCompile(`\{([^}|]+)(?:\|([^}]*))?\}`)
 
+// TemplateVars holds variables for template rendering.
+type TemplateVars struct {
+	Name    string // Binary name
+	Version string // Release version/tag
+	OS      string // Operating system (linux, darwin, windows)
+	Arch    string // Architecture (amd64, arm64, etc)
+	Ext     string // File extension (tar.gz, zip, etc)
+}
+
+// TemplateMode controls error handling for unknown variables.
+type TemplateMode int
+
+const (
+	// TemplateStrict returns error on unknown variables/modifiers
+	TemplateStrict TemplateMode = iota
+
+	// TemplatePermissive passes through unknown vars/modifiers unchanged
+	TemplatePermissive
+
+	// TemplateFailsafe ignores unknown modifiers (returns unmodified value)
+	// but preserves unknown variables as-is
+	TemplateFailsafe
+)
+
 // Render applies template variables to a pattern string.
 // Supports variables: {name}, {version}, {os}, {arch}, {ext}
 // Supports modifiers: upper, lower, title, trimprefix:PREFIX, trimsuffix:SUFFIX, replace:FROM=TO
