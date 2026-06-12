@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"time"
@@ -24,12 +25,26 @@ func NewClient(token string) *Client {
 		token = os.Getenv("GITHUB_TOKEN")
 	}
 
-	return &Client{
-		httpClient: &http.Client{
-			Timeout: 30 * time.Second,
+	httpClient := &http.Client{
+		Timeout: 30 * time.Second,
+		Transport: &http.Transport{
+			DialContext: (&net.Dialer{
+				Timeout:   10 * time.Second, // time to establish TCP connection
+				KeepAlive: 30 * time.Second,
+			}).DialContext,
+			TLSHandshakeTimeout:   10 * time.Second,
+			ResponseHeaderTimeout: 10 * time.Second, // time to receive first response byte
+			ExpectContinueTimeout: 1 * time.Second,
+			MaxIdleConns:          100,
+			MaxIdleConnsPerHost:   10,
+			IdleConnTimeout:       90 * time.Second,
 		},
-		token:   token,
-		baseURL: "https://api.github.com",
+	}
+
+	return &Client{
+		httpClient: httpClient,
+		token:      token,
+		baseURL:    "https://api.github.com",
 	}
 }
 
