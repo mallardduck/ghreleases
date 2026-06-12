@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -63,7 +64,18 @@ func NewClientWithHTTP(httpClient *http.Client, token string) *Client {
 }
 
 // LatestRelease fetches the latest release tag for a repository.
+//
+// By default it calls GitHub's /releases/latest endpoint, which returns the
+// most recently published non-prerelease, non-draft release regardless of tag
+// format. For repositories that maintain multiple release lines under distinct
+// tag prefixes (e.g. "v*" for a library and "cli/v*" for a CLI), attach a
+// ReleaseFilter to the context with WithTagPrefix so that only releases
+// matching the desired prefix are considered.
 func (c *Client) LatestRelease(ctx context.Context, owner, repo string) (string, error) {
+	if filter, ok := releaseFilterFromContext(ctx); ok && filter.TagPrefix != "" {
+		return c.latestReleaseWithFilter(ctx, owner, repo, filter)
+	}
+
 	url := fmt.Sprintf("%s/repos/%s/%s/releases/latest", c.baseURL, owner, repo)
 
 	var release struct {
@@ -75,6 +87,36 @@ func (c *Client) LatestRelease(ctx context.Context, owner, repo string) (string,
 	}
 
 	return release.TagName, nil
+}
+
+// latestReleaseWithFilter lists releases in descending publish order and
+// returns the first one whose tag starts with filter.TagPrefix. It paginates
+// until a match is found or all releases are exhausted.
+func (c *Client) latestReleaseWithFilter(ctx context.Context, owner, repo string, filter ReleaseFilter) (string, error) {
+	type releaseItem struct {
+		TagName string `json:"tag_name"`
+	}
+
+	for page := 1; ; page++ {
+		url := fmt.Sprintf("%s/repos/%s/%s/releases?page=%d", c.baseURL, owner, repo, page)
+
+		var releases []releaseItem
+		if err := c.doGet(ctx, url, &releases); err != nil {
+			return "", fmt.Errorf("%w: %v", ErrReleaseNotFound, err)
+		}
+
+		if len(releases) == 0 {
+			break
+		}
+
+		for _, r := range releases {
+			if strings.HasPrefix(r.TagName, filter.TagPrefix) {
+				return r.TagName, nil
+			}
+		}
+	}
+
+	return "", fmt.Errorf("%w: no release found matching tag prefix %q", ErrReleaseNotFound, filter.TagPrefix)
 }
 
 // Release represents a GitHub release.
