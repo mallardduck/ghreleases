@@ -17,7 +17,7 @@ import (
 func TestLatestRelease_MultiPrefix_NoFilter_ReturnsAmbiguous(t *testing.T) {
 	// Simulate a repo where cli/v2.0.0 was published after v1.5.0.
 	// GitHub's /releases/latest therefore returns cli/v2.0.0.
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"tag_name": "cli/v2.0.0"}`))
 	}))
