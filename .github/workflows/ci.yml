@@ -14,7 +14,7 @@ jobs:
       image: ghcr.io/rancher/ci-image/go1.26:latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Download dependencies
         run: go mod download
@@ -33,7 +33,7 @@ jobs:
           fi
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
         with:
           file: ./coverage.out
           flags: unittests
@@ -50,10 +50,10 @@ jobs:
         go: ['1.26']
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version: ${{ matrix.go }}
 
@@ -75,7 +75,7 @@ jobs:
       image: ghcr.io/rancher/ci-image/go1.26:latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Build
         run: go build -v ./...
