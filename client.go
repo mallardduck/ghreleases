@@ -113,6 +113,7 @@ func (e *RateLimitError) Error() string {
 	return ErrRateLimited.Error() + "; retry after " + e.RetryAfter.Format(time.RFC3339)
 }
 
+// Is reports whether target matches ErrRateLimited.
 func (e *RateLimitError) Is(target error) bool { return target == ErrRateLimited }
 
 // NewClient creates a GitHub API client.
