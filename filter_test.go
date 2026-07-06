@@ -6,6 +6,25 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
+)
+
+func makeRelease(tag string, published time.Time, prerelease, draft bool) *Release {
+	return &Release{
+		TagName:     tag,
+		Name:        tag,
+		PublishedAt: published,
+		Prerelease:  prerelease,
+		Draft:       draft,
+	}
+}
+
+var (
+	jan1  = time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	jan15 = time.Date(2026, 1, 15, 0, 0, 0, 0, time.UTC)
+	feb1  = time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)
+	feb28 = time.Date(2026, 2, 28, 0, 0, 0, 0, time.UTC)
+	mar1  = time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
 )
 
 // TestLatestRelease_MultiPrefix_NoFilter_ReturnsAmbiguous documents why the
@@ -189,4 +208,242 @@ func newMultiPrefixServer(t *testing.T) *httptest.Server {
 			{"tag_name": "v1.2.0"}
 		]`))
 	}))
+}
+
+func TestExcludePrereleases(t *testing.T) {
+	releases := []*Release{
+		makeRelease("v1.0.0", jan1, false, false),
+		makeRelease("v1.1.0-beta.1", jan15, true, false),
+		makeRelease("v2.0.0", feb1, false, false),
+		makeRelease("v2.1.0-rc.1", feb28, true, false),
+	}
+
+	got := ExcludePrereleases(releases)
+	if len(got) != 2 {
+		t.Fatalf("ExcludePrereleases() len = %d, want 2", len(got))
+	}
+	if got[0].TagName != "v1.0.0" || got[1].TagName != "v2.0.0" {
+		t.Errorf("ExcludePrereleases() tags = %v, %v, want v1.0.0, v2.0.0", got[0].TagName, got[1].TagName)
+	}
+}
+
+func TestExcludePrereleases_empty(t *testing.T) {
+	got := ExcludePrereleases(nil)
+	if len(got) != 0 {
+		t.Errorf("ExcludePrereleases(nil) len = %d, want 0", len(got))
+	}
+}
+
+func TestExcludeDrafts(t *testing.T) {
+	releases := []*Release{
+		makeRelease("v1.0.0", jan1, false, false),
+		makeRelease("v1.1.0", jan15, false, true),
+		makeRelease("v2.0.0", feb1, false, false),
+	}
+
+	got := ExcludeDrafts(releases)
+	if len(got) != 2 {
+		t.Fatalf("ExcludeDrafts() len = %d, want 2", len(got))
+	}
+	if got[0].TagName != "v1.0.0" || got[1].TagName != "v2.0.0" {
+		t.Errorf("ExcludeDrafts() got unexpected tags")
+	}
+}
+
+func TestFilterByDateRange(t *testing.T) {
+	releases := []*Release{
+		makeRelease("v1.0.0", jan1, false, false),
+		makeRelease("v1.1.0", jan15, false, false),
+		makeRelease("v2.0.0", feb1, false, false),
+		makeRelease("v2.1.0", feb28, false, false),
+		makeRelease("v3.0.0", mar1, false, false),
+	}
+
+	tests := []struct {
+		name     string
+		from, to time.Time
+		wantTags []string
+	}{
+		{
+			name:     "exact month of February",
+			from:     time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC),
+			to:       time.Date(2026, 2, 28, 23, 59, 59, 0, time.UTC),
+			wantTags: []string{"v2.0.0", "v2.1.0"},
+		},
+		{
+			name:     "no lower bound",
+			to:       jan15,
+			wantTags: []string{"v1.0.0", "v1.1.0"},
+		},
+		{
+			name:     "no upper bound",
+			from:     feb28,
+			wantTags: []string{"v2.1.0", "v3.0.0"},
+		},
+		{
+			name:     "no bounds returns all",
+			wantTags: []string{"v1.0.0", "v1.1.0", "v2.0.0", "v2.1.0", "v3.0.0"},
+		},
+		{
+			name:     "range with no matches",
+			from:     time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC),
+			to:       time.Date(2027, 12, 31, 0, 0, 0, 0, time.UTC),
+			wantTags: []string{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := FilterByDateRange(releases, tt.from, tt.to)
+			if len(got) != len(tt.wantTags) {
+				t.Fatalf("FilterByDateRange() len = %d, want %d", len(got), len(tt.wantTags))
+			}
+			for i, r := range got {
+				if r.TagName != tt.wantTags[i] {
+					t.Errorf("FilterByDateRange()[%d] = %s, want %s", i, r.TagName, tt.wantTags[i])
+				}
+			}
+		})
+	}
+}
+
+func TestFilterByDateRange_zeroPublishedAt(t *testing.T) {
+	releases := []*Release{
+		{TagName: "v1.0.0"},
+		makeRelease("v2.0.0", feb1, false, false),
+	}
+	got := FilterByDateRange(releases, jan1, mar1)
+	if len(got) != 1 || got[0].TagName != "v2.0.0" {
+		t.Errorf("FilterByDateRange() should exclude zero PublishedAt, got %v", got)
+	}
+}
+
+func TestLatestPerGroup(t *testing.T) {
+	releases := []*Release{
+		makeRelease("v1.2.0", feb1, false, false),
+		makeRelease("v1.1.0", jan15, false, false),
+		makeRelease("v2.0.0", jan1, false, false),
+		makeRelease("v1.3.0", mar1, false, false),
+	}
+
+	got := LatestPerGroup(releases, GroupByMajorVersion)
+	if len(got) != 2 {
+		t.Fatalf("LatestPerGroup() len = %d, want 2", len(got))
+	}
+	// v1 group: v1.3.0 is newest; v2 group: v2.0.0
+	if got[0].TagName != "v1.3.0" {
+		t.Errorf("LatestPerGroup()[0] = %s, want v1.3.0", got[0].TagName)
+	}
+	if got[1].TagName != "v2.0.0" {
+		t.Errorf("LatestPerGroup()[1] = %s, want v2.0.0", got[1].TagName)
+	}
+}
+
+func TestLatestPerGroup_emptyKey(t *testing.T) {
+	releases := []*Release{
+		makeRelease("v1.0.0", jan1, false, false),
+	}
+	// groupFn always returns empty → all skipped
+	got := LatestPerGroup(releases, func(_ *Release) string { return "" })
+	if len(got) != 0 {
+		t.Errorf("LatestPerGroup() with empty key len = %d, want 0", len(got))
+	}
+}
+
+func TestFilterByTagPrefix(t *testing.T) {
+	releases := []*Release{
+		makeRelease("v1.0.0", jan1, false, false),
+		makeRelease("sub-pkg/v2.0.0", feb1, false, false),
+		makeRelease("sub-pkg/v1.0.0", jan15, false, false),
+		makeRelease("other/v1.0.0", mar1, false, false),
+	}
+
+	tests := []struct {
+		prefix   string
+		wantTags []string
+	}{
+		{"sub-pkg/", []string{"sub-pkg/v2.0.0", "sub-pkg/v1.0.0"}},
+		{"v", []string{"v1.0.0"}},
+		{"", []string{"v1.0.0", "sub-pkg/v2.0.0", "sub-pkg/v1.0.0", "other/v1.0.0"}}, // empty = all
+		{"no-match/", []string{}},
+	}
+
+	for _, tt := range tests {
+		t.Run("prefix="+tt.prefix, func(t *testing.T) {
+			got := FilterByTagPrefix(releases, tt.prefix)
+			if len(got) != len(tt.wantTags) {
+				t.Fatalf("FilterByTagPrefix(%q) len = %d, want %d", tt.prefix, len(got), len(tt.wantTags))
+			}
+			for i, r := range got {
+				if r.TagName != tt.wantTags[i] {
+					t.Errorf("FilterByTagPrefix(%q)[%d] = %q, want %q", tt.prefix, i, r.TagName, tt.wantTags[i])
+				}
+			}
+		})
+	}
+}
+
+func TestGroupByMajorVersion(t *testing.T) {
+	tests := []struct {
+		tag  string
+		want string
+	}{
+		// Plain semver
+		{"v1.2.3", "v1"},
+		{"v2.0.0", "v2"},
+		{"v1.2.3-beta.1", "v1"},
+		{"1.2.3", "1"},
+		{"v10.5.2", "v10"},
+		// Non-semver → full tag
+		{"vmain", "vmain"},
+		{"main", "main"},
+		// Non-numeric minor doesn't affect major grouping
+		{"v1.x.1", "v1"},
+		// Monorepo path prefixes — path preserved in group key
+		{"sub-pkg/v1.2.3", "sub-pkg/v1"},
+		{"sub-pkg/v1.4.0", "sub-pkg/v1"},     // same group as above
+		{"top-level/v1.0.0", "top-level/v1"}, // different group from sub-pkg
+		{"sub-pkg/notver", "sub-pkg/notver"}, // fallback: non-semver after prefix
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.tag, func(t *testing.T) {
+			r := &Release{TagName: tt.tag}
+			got := GroupByMajorVersion(r)
+			if got != tt.want {
+				t.Errorf("GroupByMajorVersion(%q) = %q, want %q", tt.tag, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestGroupByMinorVersion(t *testing.T) {
+	tests := []struct {
+		tag  string
+		want string
+	}{
+		// Plain semver
+		{"v1.2.3", "v1.2"},
+		{"v1.2.3-beta.1", "v1.2"},
+		{"v2.0.0", "v2.0"},
+		{"1.2.3", "1.2"},
+		// Non-semver → full tag
+		{"v1.x.1", "v1.x.1"},
+		{"vmain", "vmain"},
+		{"v1", "v1"}, // not enough components → full tag
+		// Monorepo path prefixes
+		{"sub-pkg/v1.2.3", "sub-pkg/v1.2"},
+		{"sub-pkg/v1.2.9", "sub-pkg/v1.2"}, // same group as above
+		{"sub-pkg/v1.3.0", "sub-pkg/v1.3"}, // different minor
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.tag, func(t *testing.T) {
+			r := &Release{TagName: tt.tag}
+			got := GroupByMinorVersion(r)
+			if got != tt.want {
+				t.Errorf("GroupByMinorVersion(%q) = %q, want %q", tt.tag, got, tt.want)
+			}
+		})
+	}
 }
