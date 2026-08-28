@@ -221,6 +221,67 @@ func TestGetRelease(t *testing.T) {
 	}
 }
 
+func TestResolveTagCommit(t *testing.T) {
+	tests := []struct {
+		name       string
+		statusCode int
+		response   string
+		wantSHA    string
+		wantErr    error
+	}{
+		{
+			name:       "resolves annotated or lightweight tag to commit SHA",
+			statusCode: http.StatusOK,
+			response:   `{"sha": "3d3c42e5aac5ba805825da76410c181273ba90b1"}`,
+			wantSHA:    "3d3c42e5aac5ba805825da76410c181273ba90b1",
+		},
+		{
+			name:       "ref not found",
+			statusCode: http.StatusNotFound,
+			response:   `{"message": "Not Found"}`,
+			wantErr:    ErrRefNotFound,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/repos/owner/repo/commits/v1.0.0" {
+					t.Errorf("ResolveTagCommit() request path = %v, want /repos/owner/repo/commits/v1.0.0", r.URL.Path)
+				}
+				w.WriteHeader(tt.statusCode)
+				_, _ = w.Write([]byte(tt.response))
+			}))
+			defer server.Close()
+
+			client := NewClient("")
+			client.baseURL = server.URL
+
+			sha, err := client.ResolveTagCommit(context.Background(), "owner", "repo", "v1.0.0")
+
+			if tt.wantErr != nil {
+				if err == nil {
+					t.Errorf("ResolveTagCommit() error = nil, wantErr %v", tt.wantErr)
+					return
+				}
+				if !errors.Is(err, tt.wantErr) {
+					t.Errorf("ResolveTagCommit() error = %v, wantErr %v", err, tt.wantErr)
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("ResolveTagCommit() unexpected error = %v", err)
+				return
+			}
+
+			if sha != tt.wantSHA {
+				t.Errorf("ResolveTagCommit() sha = %v, want %v", sha, tt.wantSHA)
+			}
+		})
+	}
+}
+
 func TestFetchChecksums(t *testing.T) {
 	tests := []struct {
 		name       string
