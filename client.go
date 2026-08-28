@@ -226,6 +226,37 @@ func (c *Client) GetRelease(ctx context.Context, owner, repo, tag string) (*Rele
 	return raw.toRelease(), nil
 }
 
+// ResolveTagCommit resolves a tag (or any other Git ref, such as a branch name)
+// to the full SHA of the commit it currently points to.
+//
+// This is the correct way to pin a dependency (e.g. a GitHub Action) to an
+// immutable commit: Release.TagName only gives you the tag, and the GitHub API's
+// target_commitish field on a release is not a reliable source for this — GitHub
+// documents it as "unused if the Git tag already exists," and in practice it is
+// often just the branch the release was cut from (e.g. "main") rather than the
+// commit the tag resolves to today.
+//
+// ResolveTagCommit works for both lightweight and annotated tags, since GitHub's
+// commits API dereferences annotated tag objects to the underlying commit
+// automatically.
+func (c *Client) ResolveTagCommit(ctx context.Context, owner, repo, ref string) (string, error) {
+	url := fmt.Sprintf("%s/repos/%s/%s/commits/%s", c.baseURL, owner, repo, ref)
+
+	var commit struct {
+		SHA string `json:"sha"`
+	}
+
+	if err := c.doGet(ctx, url, &commit); err != nil {
+		var rl *RateLimitError
+		if errors.As(err, &rl) {
+			return "", rl
+		}
+		return "", fmt.Errorf("%w: %v", ErrRefNotFound, err)
+	}
+
+	return commit.SHA, nil
+}
+
 // ListReleases fetches one page of releases for a repository, newest first.
 // Any filter fields set in opts are applied to the returned slice.
 func (c *Client) ListReleases(ctx context.Context, owner, repo string, opts *ListOptions) ([]*Release, error) {

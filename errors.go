@@ -9,6 +9,7 @@ import (
 var (
 	ErrInvalidSource     = errors.New("invalid GitHub source format")
 	ErrReleaseNotFound   = errors.New("release not found")
+	ErrRefNotFound       = errors.New("ref not found")
 	ErrAssetNotFound     = errors.New("asset not found")
 	ErrChecksumMismatch  = errors.New("checksum verification failed")
 	ErrUnknownVariable   = errors.New("unknown template variable")
