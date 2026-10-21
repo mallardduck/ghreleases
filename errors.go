@@ -3,6 +3,7 @@ package ghrelease
 
 import (
 	"errors"
+	"fmt"
 )
 
 // Package errors
@@ -20,3 +21,27 @@ var (
 	ErrUnsupportedFormat = errors.New("unsupported archive format")
 	ErrHostNotAllowed    = errors.New("host not allowed")
 )
+
+// HTTPStatusError is returned when a request completes with an unexpected HTTP
+// status code. Use errors.As to inspect it; it may be wrapped alongside a
+// sentinel such as ErrReleaseNotFound.
+type HTTPStatusError struct {
+	URL        string
+	StatusCode int
+}
+
+func (e *HTTPStatusError) Error() string {
+	return fmt.Sprintf("unexpected status code: %d (%s)", e.StatusCode, e.URL)
+}
+
+// wrapped attaches a sentinel to a cause so that errors.Is matches the sentinel
+// and errors.As/Is can still reach the cause (Go 1.18 allows only one %w).
+type wrapped struct {
+	sentinel, cause error
+}
+
+func (w *wrapped) Error() string { return w.sentinel.Error() + ": " + w.cause.Error() }
+
+func (w *wrapped) Unwrap() error { return w.cause }
+
+func (w *wrapped) Is(target error) bool { return target == w.sentinel }
