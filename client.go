@@ -569,3 +569,7 @@ func rateLimitReset(resp *http.Response) time.Time {
 	}
 	return time.Time{}
 }
+
+func withDefaultTimeout(ctx context.Context) (context.Context, context.CancelFunc) {
+	return ctx, func() {}
+}
