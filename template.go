@@ -16,6 +16,11 @@ type TemplateVars struct {
 	OS      string // Operating system (linux, darwin, windows)
 	Arch    string // Architecture (amd64, arm64, etc)
 	Ext     string // File extension (tar.gz, zip, etc)
+
+	// Extra holds additional variables addressable as {key}. Built-in variables
+	// always win over Extra. A key present with an empty value counts as found
+	// (it renders as an empty string rather than ErrUnknownVariable).
+	Extra map[string]string
 }
 
 // TemplateMode controls error handling for unknown variables.
@@ -34,7 +39,7 @@ const (
 )
 
 // Render applies template variables to a pattern string.
-// Supports variables: {name}, {version}, {os}, {arch}, {ext}
+// Supports variables: {name}, {version}, {os}, {arch}, {ext}, plus any keys in TemplateVars.Extra
 // Supports modifiers: upper, lower, title, trimprefix:PREFIX, trimsuffix:SUFFIX, replace:FROM=TO
 //
 // Modifiers are chained with pipe separators and applied left-to-right:
@@ -47,6 +52,9 @@ const (
 //	{name|upper}-{version}.tar.gz
 //	{os|replace:darwin=macos}-binary
 //	{version|trimprefix:v}
+//
+// In TemplateStrict mode the partially rendered string is returned together with
+// the error; callers must check the error before using the result.
 //
 // Mode behavior:
 //   - TemplateStrict: returns error on unknown variables/modifiers
