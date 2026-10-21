@@ -149,13 +149,15 @@ func (e *RateLimitError) Is(target error) bool { return target == ErrRateLimited
 // NewClient creates a GitHub API client.
 // Token is optional but recommended to avoid rate limits.
 // If token is empty, tries GITHUB_TOKEN environment variable.
+//
+// The default HTTP client enforces dial, TLS and response-header timeouts but no
+// total timeout, so large downloads are bounded only by the caller's context.
 func NewClient(token string, opts ...Option) *Client {
 	if token == "" {
 		token = os.Getenv("GITHUB_TOKEN")
 	}
 
 	httpClient := &http.Client{
-		Timeout: 30 * time.Second,
 		Transport: &http.Transport{
 			DialContext: (&net.Dialer{
 				Timeout:   10 * time.Second, // time to establish TCP connection
@@ -415,6 +417,9 @@ func (r apiRelease) toRelease() *Release {
 
 // FetchChecksums downloads and parses a checksum file.
 func (c *Client) FetchChecksums(ctx context.Context, url string) (map[string]string, error) {
+	ctx, cancel := withDefaultTimeout(ctx)
+	defer cancel()
+
 	req, err := c.newRequest(ctx, url, "application/octet-stream")
 	if err != nil {
 		return nil, err
@@ -434,6 +439,9 @@ func (c *Client) FetchChecksums(ctx context.Context, url string) (map[string]str
 }
 
 func (c *Client) doGet(ctx context.Context, url string, v interface{}) error {
+	ctx, cancel := withDefaultTimeout(ctx)
+	defer cancel()
+
 	req, err := c.newRequest(ctx, url, "application/vnd.github.v3+json")
 	if err != nil {
 		return err
@@ -570,6 +578,12 @@ func rateLimitReset(resp *http.Response) time.Time {
 	return time.Time{}
 }
 
+// apiTimeout bounds API and checksum calls whose context has no deadline.
+const apiTimeout = 30 * time.Second
+
 func withDefaultTimeout(ctx context.Context) (context.Context, context.CancelFunc) {
-	return ctx, func() {}
+	if _, ok := ctx.Deadline(); ok {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(ctx, apiTimeout)
 }
