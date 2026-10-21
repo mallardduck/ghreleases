@@ -415,6 +415,12 @@ func (r apiRelease) toRelease() *Release {
 	return rel
 }
 
+// FetchChecksumsLenient downloads and parses a checksum file leniently
+// (see ParseChecksumFileLenient). Stub.
+func (c *Client) FetchChecksumsLenient(ctx context.Context, url string) (map[string]string, error) {
+	return nil, nil
+}
+
 // FetchChecksums downloads and parses a checksum file.
 func (c *Client) FetchChecksums(ctx context.Context, url string) (map[string]string, error) {
 	ctx, cancel := withDefaultTimeout(ctx)

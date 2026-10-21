@@ -68,3 +68,6 @@ func ValidateHash(computed, expected string) error {
 
 	return nil
 }
+
+// ParseChecksumFileLenient parses checksum files tolerantly. Stub.
+func ParseChecksumFileLenient(r io.Reader) (map[string]string, error) { return nil, nil }
