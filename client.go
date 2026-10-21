@@ -285,7 +285,7 @@ func (c *Client) ResolveTagCommit(ctx context.Context, owner, repo, ref string) 
 		if errors.As(err, &rl) {
 			return "", rl
 		}
-		return "", fmt.Errorf("%w: %v", ErrRefNotFound, err)
+		return "", &wrapped{sentinel: ErrRefNotFound, cause: err}
 	}
 
 	return commit.SHA, nil
@@ -427,7 +427,7 @@ func (c *Client) FetchChecksums(ctx context.Context, url string) (map[string]str
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+		return nil, &HTTPStatusError{URL: url, StatusCode: resp.StatusCode}
 	}
 
 	return ParseChecksumFile(resp.Body)
@@ -453,10 +453,8 @@ func (c *Client) doGet(ctx context.Context, url string, v interface{}) error {
 		if resp.Header.Get("X-RateLimit-Remaining") == "0" {
 			return &RateLimitError{RetryAfter: rateLimitReset(resp)}
 		}
-		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
-	default:
-		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
+	return &HTTPStatusError{URL: url, StatusCode: resp.StatusCode}
 }
 
 // newRequest builds a GET request, enforcing the host allowlist and attaching
@@ -552,7 +550,7 @@ func wrapFetchErr(err error) error {
 	if errors.As(err, &rl) {
 		return rl
 	}
-	return fmt.Errorf("%w: %v", ErrReleaseNotFound, err)
+	return &wrapped{sentinel: ErrReleaseNotFound, cause: err}
 }
 
 // rateLimitReset parses the earliest reset time from GitHub rate-limit response headers.

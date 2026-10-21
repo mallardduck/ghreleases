@@ -48,7 +48,7 @@ func (c *Client) Download(url string, w io.Writer, opts DownloadOptions) (*Downl
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("download failed: status %d", resp.StatusCode)
+		return nil, &HTTPStatusError{URL: url, StatusCode: resp.StatusCode}
 	}
 
 	// Stream to writer while computing hash
