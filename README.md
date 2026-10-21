@@ -72,7 +72,27 @@ client := ghrelease.NewClient("ghp_yourtoken")
 // Custom HTTP client (for proxies, timeouts, etc.)
 httpClient := &http.Client{Timeout: 60 * time.Second}
 client := ghrelease.NewClientWithHTTP(httpClient, "")
+
+// Options (both constructors accept them)
+client := ghrelease.NewClient("",
+    ghrelease.WithBaseURL("https://ghe.example.com/api/v3"),
+    ghrelease.WithAllowedHosts("github.com", "example.com"),
+)
 ```
+
+#### Host Policy and Timeouts
+
+- **Token scoping (always on):** the `Authorization: Bearer` header is sent only to the
+  API base host, `github.com`, `*.github.com`, `githubusercontent.com` and
+  `*.githubusercontent.com` (dot-boundary match, so `evilgithub.com` never receives it).
+  It is also removed on redirects to any other host.
+- **`WithAllowedHosts(hosts...)`:** when set, requests and redirects to other hosts fail
+  with `ErrHostNotAllowed`. An entry matches the host itself or any subdomain
+  (`github.com` allows `api.github.com`). The base URL host is always allowed.
+  The default is unrestricted.
+- **Timeouts:** the default HTTP client has dial, TLS and response-header timeouts but no
+  total timeout. API and checksum calls get a 30s timeout when the context has no deadline.
+  `Download` is bounded only by its context, so large artifacts are not cut off mid-body.
 
 #### Fetching Releases
 
@@ -95,6 +115,14 @@ for _, asset := range release.Assets {
 // Download and parse checksums file
 checksums, err := client.FetchChecksums(ctx, checksumURL)
 expectedHash := checksums["myapp-linux-amd64"]
+
+// Lenient: skips junk lines, strips "*" binary markers, and stores a bare
+// hash under the key "" (single-entry .sha256sum files)
+checksums, err := client.FetchChecksumsLenient(ctx, checksumURL)
+
+// Multi-hash files (e.g. mikefarah/yq): "<filename> <hash> <hash> ..." plus a
+// sibling file naming the columns. The exact "SHA-256" column is selected.
+checksums, err := client.FetchMultiHashChecksums(ctx, checksumsURL, hashesOrderURL)
 ```
 
 ### Template Rendering
@@ -108,6 +136,12 @@ Dynamically generate asset names using variables and modifiers.
 - `{os}` - Operating system (linux, darwin, windows)
 - `{arch}` - Architecture (amd64, arm64, etc)
 - `{ext}` - File extension (tar.gz, zip, etc)
+- Any key in `TemplateVars.Extra` (`map[string]string`), e.g. `{version_commit}`.
+  Built-ins win over `Extra`; a key with an empty value is found and renders as `""`.
+
+In `TemplateStrict` mode `Render` returns the partially rendered string together with the
+error; always check the error before using the result. A modifier that requires an
+argument (`trimprefix`, `trimsuffix`, `replace`) is an error without one.
 
 #### Modifiers
 
@@ -258,6 +292,13 @@ abc0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  file2.txt
 # Comments and blank lines are ignored
 def0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  file3.txt
 ```
+
+Lenient and multi-hash parsing are also available directly:
+`ParseChecksumFileLenient(r)`, `ParseHashOrder(r)` and
+`ParseMultiHashChecksumFile(r, order)`. The multi-hash parser never infers the column from
+value shape (SHA3-256, BLAKE2s, etc. are also 64 hex); it returns `ErrChecksumFormat` if
+`SHA-256` is missing or duplicated, a line's column count differs from the order file, or
+the value is not 64 hex.
 
 ### Source Parsing
 
@@ -428,10 +469,23 @@ if errors.Is(err, ghrelease.ErrChecksumMismatch) {
 }
 ```
 
+### Typed Errors
+
+HTTP failures return `*HTTPStatusError` (with `URL` and `StatusCode`). Where a sentinel
+also applies, both match:
+
+```go
+var se *ghrelease.HTTPStatusError
+if errors.Is(err, ghrelease.ErrReleaseNotFound) && errors.As(err, &se) {
+    fmt.Println(se.StatusCode)
+}
+```
+
 ### Available Errors
 
 - `ErrInvalidSource` - Invalid GitHub source format
 - `ErrReleaseNotFound` - Release not found
+- `ErrRefNotFound` - Git ref not found
 - `ErrAssetNotFound` - Asset not found
 - `ErrChecksumMismatch` - Checksum verification failed
 - `ErrUnknownVariable` - Unknown template variable (strict mode)
@@ -440,6 +494,8 @@ if errors.Is(err, ghrelease.ErrChecksumMismatch) {
 - `ErrMultipleFiles` - Archive has multiple files, ExtractPath required
 - `ErrFileNotFound` - File not found in archive
 - `ErrUnsupportedFormat` - Unsupported archive format
+- `ErrChecksumFormat` - Malformed multi-hash checksum file
+- `ErrHostNotAllowed` - Request or redirect blocked by `WithAllowedHosts`
 
 ## Testing
 
