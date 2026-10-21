@@ -426,11 +426,6 @@ func (c *Client) FetchChecksums(ctx context.Context, url string) (map[string]str
 	return ParseChecksumFile(bytes.NewReader(body))
 }
 
-// FetchMultiHashChecksums downloads a multi-hash checksum file. Stub.
-func (c *Client) FetchMultiHashChecksums(ctx context.Context, checksumURL, orderURL string) (map[string]string, error) {
-	return nil, nil
-}
-
 // FetchChecksumsLenient downloads and parses a checksum file leniently
 // (see ParseChecksumFileLenient).
 func (c *Client) FetchChecksumsLenient(ctx context.Context, url string) (map[string]string, error) {
@@ -439,6 +434,24 @@ func (c *Client) FetchChecksumsLenient(ctx context.Context, url string) (map[str
 		return nil, err
 	}
 	return ParseChecksumFileLenient(bytes.NewReader(body))
+}
+
+// FetchMultiHashChecksums downloads a multi-hash checksum file and its sibling
+// hash-order file, then returns the SHA-256 column (see ParseMultiHashChecksumFile).
+func (c *Client) FetchMultiHashChecksums(ctx context.Context, checksumURL, orderURL string) (map[string]string, error) {
+	orderBody, err := c.fetchBody(ctx, orderURL)
+	if err != nil {
+		return nil, err
+	}
+	order, err := ParseHashOrder(bytes.NewReader(orderBody))
+	if err != nil {
+		return nil, err
+	}
+	body, err := c.fetchBody(ctx, checksumURL)
+	if err != nil {
+		return nil, err
+	}
+	return ParseMultiHashChecksumFile(bytes.NewReader(body), order)
 }
 
 // fetchBody GETs url and returns the body, applying the default API timeout when
@@ -488,6 +501,16 @@ func (c *Client) doGet(ctx context.Context, url string, v interface{}) error {
 		}
 	}
 	return &HTTPStatusError{URL: url, StatusCode: resp.StatusCode}
+}
+
+// apiTimeout bounds API and checksum calls whose context has no deadline.
+const apiTimeout = 30 * time.Second
+
+func withDefaultTimeout(ctx context.Context) (context.Context, context.CancelFunc) {
+	if _, ok := ctx.Deadline(); ok {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(ctx, apiTimeout)
 }
 
 // newRequest builds a GET request, enforcing the host allowlist and attaching
@@ -601,14 +624,4 @@ func rateLimitReset(resp *http.Response) time.Time {
 		}
 	}
 	return time.Time{}
-}
-
-// apiTimeout bounds API and checksum calls whose context has no deadline.
-const apiTimeout = 30 * time.Second
-
-func withDefaultTimeout(ctx context.Context) (context.Context, context.CancelFunc) {
-	if _, ok := ctx.Deadline(); ok {
-		return ctx, func() {}
-	}
-	return context.WithTimeout(ctx, apiTimeout)
 }

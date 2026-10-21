@@ -120,10 +120,79 @@ func ParseChecksumFileLenient(r io.Reader) (map[string]string, error) {
 	return checksums, nil
 }
 
-// ParseHashOrder parses a hash-order file. Stub.
-func ParseHashOrder(r io.Reader) ([]string, error) { return nil, nil }
+// sha256Column is the exact column name selected from multi-hash checksum files.
+const sha256Column = "SHA-256"
 
-// ParseMultiHashChecksumFile parses multi-hash checksum files. Stub.
+// ParseHashOrder parses a hash-order file (e.g. mikefarah/yq's
+// checksums_hashes_order): one algorithm name per line, blank lines skipped.
+func ParseHashOrder(r io.Reader) ([]string, error) {
+	var order []string
+	scanner := bufio.NewScanner(r)
+	for scanner.Scan() {
+		if name := strings.TrimSpace(scanner.Text()); name != "" {
+			order = append(order, name)
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("error reading hash order file: %w", err)
+	}
+	return order, nil
+}
+
+// ParseMultiHashChecksumFile parses checksum files of the form
+//
+//	<filename>  <hash> <hash> ...
+//
+// where order (see ParseHashOrder) names each hash column. It returns the
+// "SHA-256" column keyed by filename. The column is selected by its exact name,
+// never by value shape, because many other algorithms (SHA3-256, BLAKE2s,
+// GOST12-256, ...) are also 64 hex characters.
+//
+// Errors wrap ErrChecksumFormat when "SHA-256" is absent from order or appears
+// more than once, when a line's column count differs from len(order), or when
+// the selected value is not 64 hex characters. Blank lines and "#" comments are
+// skipped.
 func ParseMultiHashChecksumFile(r io.Reader, order []string) (map[string]string, error) {
-	return nil, nil
+	col := -1
+	for i, name := range order {
+		if name != sha256Column {
+			continue
+		}
+		if col >= 0 {
+			return nil, fmt.Errorf("%w: column %s appears more than once", ErrChecksumFormat, sha256Column)
+		}
+		col = i
+	}
+	if col < 0 {
+		return nil, fmt.Errorf("%w: column %s not found in hash order", ErrChecksumFormat, sha256Column)
+	}
+
+	checksums := make(map[string]string)
+	scanner := bufio.NewScanner(r)
+	// Lines carry ~30 hashes (several KiB); allow well beyond the default 64 KiB token limit.
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	lineNum := 0
+
+	for scanner.Scan() {
+		lineNum++
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields)-1 != len(order) {
+			return nil, fmt.Errorf("%w: line %d has %d hash columns, expected %d",
+				ErrChecksumFormat, lineNum, len(fields)-1, len(order))
+		}
+		hash := fields[col+1]
+		if !isHex64(hash) {
+			return nil, fmt.Errorf("%w: line %d: %s value is not 64 hex characters", ErrChecksumFormat, lineNum, sha256Column)
+		}
+		checksums[fields[0]] = strings.ToLower(hash)
+	}
+
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("error reading checksum file: %w", err)
+	}
+	return checksums, nil
 }
