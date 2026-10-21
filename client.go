@@ -426,6 +426,11 @@ func (c *Client) FetchChecksums(ctx context.Context, url string) (map[string]str
 	return ParseChecksumFile(bytes.NewReader(body))
 }
 
+// FetchMultiHashChecksums downloads a multi-hash checksum file. Stub.
+func (c *Client) FetchMultiHashChecksums(ctx context.Context, checksumURL, orderURL string) (map[string]string, error) {
+	return nil, nil
+}
+
 // FetchChecksumsLenient downloads and parses a checksum file leniently
 // (see ParseChecksumFileLenient).
 func (c *Client) FetchChecksumsLenient(ctx context.Context, url string) (map[string]string, error) {

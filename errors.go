@@ -19,6 +19,7 @@ var (
 	ErrMultipleFiles     = errors.New("archive contains multiple files, ExtractPath required")
 	ErrFileNotFound      = errors.New("file not found in archive")
 	ErrUnsupportedFormat = errors.New("unsupported archive format")
+	ErrChecksumFormat    = errors.New("invalid checksum file format")
 	ErrHostNotAllowed    = errors.New("host not allowed")
 )
 

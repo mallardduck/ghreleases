@@ -119,3 +119,11 @@ func ParseChecksumFileLenient(r io.Reader) (map[string]string, error) {
 	}
 	return checksums, nil
 }
+
+// ParseHashOrder parses a hash-order file. Stub.
+func ParseHashOrder(r io.Reader) ([]string, error) { return nil, nil }
+
+// ParseMultiHashChecksumFile parses multi-hash checksum files. Stub.
+func ParseMultiHashChecksumFile(r io.Reader, order []string) (map[string]string, error) {
+	return nil, nil
+}

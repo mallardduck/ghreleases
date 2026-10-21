@@ -57,7 +57,6 @@ func TestParseChecksumFile_StillStrict(t *testing.T) {
 	}
 }
 
-
 func TestFetchChecksumsLenient(t *testing.T) {
 	h := strings.Repeat("e", 64)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
