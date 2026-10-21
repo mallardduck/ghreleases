@@ -6,6 +6,11 @@ import (
 	"strings"
 )
 
+var (
+	httpsSourceRe = regexp.MustCompile(`^https?://(?:www\.)?github\.com/([^/]+)/([^/]+?)(?:\.git)?/?$`)
+	sshSourceRe   = regexp.MustCompile(`^git@github\.com:([^/]+)/([^/]+?)(?:\.git)?/?$`)
+)
+
 // ParseSource extracts owner and repo from various GitHub identifiers.
 // Supports:
 //   - owner/repo
@@ -34,7 +39,7 @@ func ParseSource(source string) (owner, repo string, err error) {
 		return "", "", fmt.Errorf("%w: missing separator", ErrInvalidSource)
 	}
 
-	parts := strings.SplitN(source, "/", 2)
+	parts := strings.Split(source, "/")
 	if len(parts) != 2 {
 		return "", "", fmt.Errorf("%w: expected owner/repo", ErrInvalidSource)
 	}
@@ -53,8 +58,7 @@ func parseHTTPSSource(source string) (string, string, error) {
 	// Extract path from URL
 	// https://github.com/owner/repo -> owner/repo
 	// https://github.com/owner/repo.git -> owner/repo
-	re := regexp.MustCompile(`github\.com/([^/]+)/([^/]+?)(?:\.git)?$`)
-	matches := re.FindStringSubmatch(source)
+	matches := httpsSourceRe.FindStringSubmatch(source)
 	if len(matches) != 3 {
 		return "", "", fmt.Errorf("%w: invalid GitHub URL", ErrInvalidSource)
 	}
@@ -64,8 +68,7 @@ func parseHTTPSSource(source string) (string, string, error) {
 
 func parseSSHSource(source string) (string, string, error) {
 	// git@github.com:owner/repo.git -> owner/repo
-	re := regexp.MustCompile(`git@github\.com:([^/]+)/(.+?)(?:\.git)?$`)
-	matches := re.FindStringSubmatch(source)
+	matches := sshSourceRe.FindStringSubmatch(source)
 	if len(matches) != 3 {
 		return "", "", fmt.Errorf("%w: invalid SSH URL", ErrInvalidSource)
 	}

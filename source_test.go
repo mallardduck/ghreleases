@@ -63,7 +63,55 @@ func TestParseSource(t *testing.T) {
 			wantOwner: "owner",
 			wantRepo:  "repo",
 		},
+		{
+			name:      "HTTPS URL with trailing slash",
+			source:    "https://github.com/owner/repo/",
+			wantOwner: "owner",
+			wantRepo:  "repo",
+		},
+		{
+			name:      "HTTPS URL with .git and trailing slash",
+			source:    "https://github.com/owner/repo.git/",
+			wantOwner: "owner",
+			wantRepo:  "repo",
+		},
+		{
+			name:      "HTTPS URL with www",
+			source:    "https://www.github.com/owner/repo",
+			wantOwner: "owner",
+			wantRepo:  "repo",
+		},
 		// Invalid formats
+		{
+			name:    "lookalike host - notgithub.com",
+			source:  "https://notgithub.com/a/b",
+			wantErr: ErrInvalidSource,
+		},
+		{
+			name:    "lookalike host - github.com.evil.com",
+			source:  "https://github.com.evil.com/a/b",
+			wantErr: ErrInvalidSource,
+		},
+		{
+			name:    "HTTPS URL with extra path segments",
+			source:  "https://github.com/a/b/tree/main",
+			wantErr: ErrInvalidSource,
+		},
+		{
+			name:    "SSH lookalike host",
+			source:  "git@notgithub.com:a/b.git",
+			wantErr: ErrInvalidSource,
+		},
+		{
+			name:    "SSH with extra path segments",
+			source:  "git@github.com:a/b/c.git",
+			wantErr: ErrInvalidSource,
+		},
+		{
+			name:    "shorthand with three segments",
+			source:  "a/b/c",
+			wantErr: ErrInvalidSource,
+		},
 		{
 			name:    "empty string",
 			source:  "",

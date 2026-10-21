@@ -1,12 +1,15 @@
 package ghrelease
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -18,6 +21,35 @@ type Client struct {
 	httpClient *http.Client
 	token      string // optional GITHUB_TOKEN
 	baseURL    string // defaults to "https://api.github.com"
+
+	// allowedHosts, when non-empty, restricts every request (and redirect) to
+	// these hosts and their subdomains, plus the base URL host.
+	allowedHosts []string
+}
+
+// Option configures a Client. Pass options to NewClient or NewClientWithHTTP.
+type Option func(*Client)
+
+// WithBaseURL overrides the GitHub API base URL (default "https://api.github.com").
+// It is mainly useful for GitHub Enterprise and for tests. The base URL host is
+// always allowed by WithAllowedHosts and always receives the token.
+func WithBaseURL(baseURL string) Option {
+	return func(c *Client) { c.baseURL = strings.TrimRight(baseURL, "/") }
+}
+
+// WithAllowedHosts restricts the client to the given hosts. Requests, and
+// redirects, to any other host fail with ErrHostNotAllowed. An entry matches
+// the exact host or any of its subdomains ("github.com" allows
+// "api.github.com"). The base URL host is always allowed. By default the
+// client is unrestricted.
+func WithAllowedHosts(hosts ...string) Option {
+	return func(c *Client) {
+		for _, h := range hosts {
+			if h = strings.ToLower(strings.TrimSpace(h)); h != "" {
+				c.allowedHosts = append(c.allowedHosts, h)
+			}
+		}
+	}
 }
 
 // Release represents a GitHub release.
@@ -119,13 +151,15 @@ func (e *RateLimitError) Is(target error) bool { return target == ErrRateLimited
 // NewClient creates a GitHub API client.
 // Token is optional but recommended to avoid rate limits.
 // If token is empty, tries GITHUB_TOKEN environment variable.
-func NewClient(token string) *Client {
+//
+// The default HTTP client enforces dial, TLS and response-header timeouts but no
+// total timeout, so large downloads are bounded only by the caller's context.
+func NewClient(token string, opts ...Option) *Client {
 	if token == "" {
 		token = os.Getenv("GITHUB_TOKEN")
 	}
 
 	httpClient := &http.Client{
-		Timeout: 30 * time.Second,
 		Transport: &http.Transport{
 			DialContext: (&net.Dialer{
 				Timeout:   10 * time.Second, // time to establish TCP connection
@@ -140,25 +174,29 @@ func NewClient(token string) *Client {
 		},
 	}
 
-	return &Client{
-		httpClient: httpClient,
-		token:      token,
-		baseURL:    "https://api.github.com",
-	}
+	return newClient(httpClient, token, opts)
 }
 
 // NewClientWithHTTP creates a client with a custom HTTP client.
 // Allows callers to configure timeouts, proxies, etc.
-func NewClientWithHTTP(httpClient *http.Client, token string) *Client {
+func NewClientWithHTTP(httpClient *http.Client, token string, opts ...Option) *Client {
 	if token == "" {
 		token = os.Getenv("GITHUB_TOKEN")
 	}
 
-	return &Client{
+	return newClient(httpClient, token, opts)
+}
+
+func newClient(httpClient *http.Client, token string, opts []Option) *Client {
+	c := &Client{
 		httpClient: httpClient,
 		token:      token,
 		baseURL:    "https://api.github.com",
 	}
+	for _, opt := range opts {
+		opt(c)
+	}
+	return c
 }
 
 // LatestRelease fetches the latest release tag for a repository.
@@ -251,7 +289,7 @@ func (c *Client) ResolveTagCommit(ctx context.Context, owner, repo, ref string) 
 		if errors.As(err, &rl) {
 			return "", rl
 		}
-		return "", fmt.Errorf("%w: %v", ErrRefNotFound, err)
+		return "", &wrapped{sentinel: ErrRefNotFound, cause: err}
 	}
 
 	return commit.SHA, nil
@@ -379,43 +417,74 @@ func (r apiRelease) toRelease() *Release {
 	return rel
 }
 
-// FetchChecksums downloads and parses a checksum file.
+// FetchChecksums downloads and parses a checksum file strictly (see ParseChecksumFile).
 func (c *Client) FetchChecksums(ctx context.Context, url string) (map[string]string, error) {
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	body, err := c.fetchBody(ctx, url)
 	if err != nil {
 		return nil, err
 	}
+	return ParseChecksumFile(bytes.NewReader(body))
+}
 
-	if c.token != "" {
-		req.Header.Set("Authorization", "Bearer "+c.token)
+// FetchChecksumsLenient downloads and parses a checksum file leniently
+// (see ParseChecksumFileLenient).
+func (c *Client) FetchChecksumsLenient(ctx context.Context, url string) (map[string]string, error) {
+	body, err := c.fetchBody(ctx, url)
+	if err != nil {
+		return nil, err
 	}
-	req.Header.Set("Accept", "application/octet-stream")
+	return ParseChecksumFileLenient(bytes.NewReader(body))
+}
 
-	resp, err := c.httpClient.Do(req)
+// FetchMultiHashChecksums downloads a multi-hash checksum file and its sibling
+// hash-order file, then returns the SHA-256 column (see ParseMultiHashChecksumFile).
+func (c *Client) FetchMultiHashChecksums(ctx context.Context, checksumURL, orderURL string) (map[string]string, error) {
+	orderBody, err := c.fetchBody(ctx, orderURL)
+	if err != nil {
+		return nil, err
+	}
+	order, err := ParseHashOrder(bytes.NewReader(orderBody))
+	if err != nil {
+		return nil, err
+	}
+	body, err := c.fetchBody(ctx, checksumURL)
+	if err != nil {
+		return nil, err
+	}
+	return ParseMultiHashChecksumFile(bytes.NewReader(body), order)
+}
+
+// fetchBody GETs url and returns the body, applying the default API timeout when
+// ctx has no deadline. Non-200 responses return *HTTPStatusError.
+func (c *Client) fetchBody(ctx context.Context, url string) ([]byte, error) {
+	ctx, cancel := withDefaultTimeout(ctx)
+	defer cancel()
+
+	req, err := c.newRequest(ctx, url, "application/octet-stream")
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.send(req)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+		return nil, &HTTPStatusError{URL: url, StatusCode: resp.StatusCode}
 	}
-
-	return ParseChecksumFile(resp.Body)
+	return io.ReadAll(resp.Body)
 }
 
 func (c *Client) doGet(ctx context.Context, url string, v interface{}) error {
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	ctx, cancel := withDefaultTimeout(ctx)
+	defer cancel()
+
+	req, err := c.newRequest(ctx, url, "application/vnd.github.v3+json")
 	if err != nil {
 		return err
 	}
-
-	if c.token != "" {
-		req.Header.Set("Authorization", "Bearer "+c.token)
-	}
-	req.Header.Set("Accept", "application/vnd.github.v3+json")
-
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.send(req)
 	if err != nil {
 		return err
 	}
@@ -430,10 +499,103 @@ func (c *Client) doGet(ctx context.Context, url string, v interface{}) error {
 		if resp.Header.Get("X-RateLimit-Remaining") == "0" {
 			return &RateLimitError{RetryAfter: rateLimitReset(resp)}
 		}
-		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
-	default:
-		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
+	return &HTTPStatusError{URL: url, StatusCode: resp.StatusCode}
+}
+
+// apiTimeout bounds API and checksum calls whose context has no deadline.
+const apiTimeout = 30 * time.Second
+
+func withDefaultTimeout(ctx context.Context) (context.Context, context.CancelFunc) {
+	if _, ok := ctx.Deadline(); ok {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(ctx, apiTimeout)
+}
+
+// newRequest builds a GET request, enforcing the host allowlist and attaching
+// the token only for GitHub-owned hosts (or the API base host).
+func (c *Client) newRequest(ctx context.Context, rawURL, accept string) (*http.Request, error) {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return nil, err
+	}
+	if !c.hostAllowed(u.Hostname()) {
+		return nil, fmt.Errorf("%w: %s", ErrHostNotAllowed, u.Hostname())
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	if c.token != "" && c.tokenHost(u.Hostname()) {
+		req.Header.Set("Authorization", "Bearer "+c.token)
+	}
+	req.Header.Set("Accept", accept)
+	return req, nil
+}
+
+// send performs req using a per-request copy of the HTTP client whose redirect
+// policy enforces the host allowlist and strips the token on redirects to
+// non-GitHub hosts. The caller's http.Client is never mutated.
+func (c *Client) send(req *http.Request) (*http.Response, error) {
+	hc := *c.httpClient
+	prev := c.httpClient.CheckRedirect
+	hc.CheckRedirect = func(r *http.Request, via []*http.Request) error {
+		host := r.URL.Hostname()
+		if !c.hostAllowed(host) {
+			return fmt.Errorf("%w: %s", ErrHostNotAllowed, host)
+		}
+		if !c.tokenHost(host) {
+			r.Header.Del("Authorization")
+		}
+		if prev != nil {
+			return prev(r, via)
+		}
+		if len(via) >= 10 {
+			return errors.New("stopped after 10 redirects")
+		}
+		return nil
+	}
+	return hc.Do(req)
+}
+
+func (c *Client) baseHost() string {
+	u, err := url.Parse(c.baseURL)
+	if err != nil {
+		return ""
+	}
+	return strings.ToLower(u.Hostname())
+}
+
+// hostAllowed reports whether host may be contacted. Unrestricted by default.
+func (c *Client) hostAllowed(host string) bool {
+	if len(c.allowedHosts) == 0 {
+		return true
+	}
+	host = strings.ToLower(host)
+	if host == c.baseHost() {
+		return true
+	}
+	for _, allowed := range c.allowedHosts {
+		if hostMatches(host, allowed) {
+			return true
+		}
+	}
+	return false
+}
+
+// tokenHost reports whether the token may be sent to host.
+func (c *Client) tokenHost(host string) bool {
+	host = strings.ToLower(host)
+	return host == c.baseHost() ||
+		hostMatches(host, "github.com") ||
+		hostMatches(host, "githubusercontent.com")
+}
+
+// hostMatches reports whether host equals domain or is a subdomain of it,
+// matching on a dot boundary ("evilgithub.com" does not match "github.com").
+func hostMatches(host, domain string) bool {
+	return host == domain || strings.HasSuffix(host, "."+domain)
 }
 
 // wrapFetchErr wraps a doGet error as ErrReleaseNotFound, unless it is already a
@@ -444,7 +606,7 @@ func wrapFetchErr(err error) error {
 	if errors.As(err, &rl) {
 		return rl
 	}
-	return fmt.Errorf("%w: %v", ErrReleaseNotFound, err)
+	return &wrapped{sentinel: ErrReleaseNotFound, cause: err}
 }
 
 // rateLimitReset parses the earliest reset time from GitHub rate-limit response headers.
