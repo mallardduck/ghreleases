@@ -18,6 +18,35 @@ type Client struct {
 	httpClient *http.Client
 	token      string // optional GITHUB_TOKEN
 	baseURL    string // defaults to "https://api.github.com"
+
+	// allowedHosts, when non-empty, restricts every request (and redirect) to
+	// these hosts and their subdomains, plus the base URL host.
+	allowedHosts []string
+}
+
+// Option configures a Client. Pass options to NewClient or NewClientWithHTTP.
+type Option func(*Client)
+
+// WithBaseURL overrides the GitHub API base URL (default "https://api.github.com").
+// It is mainly useful for GitHub Enterprise and for tests. The base URL host is
+// always allowed by WithAllowedHosts and always receives the token.
+func WithBaseURL(baseURL string) Option {
+	return func(c *Client) { c.baseURL = strings.TrimRight(baseURL, "/") }
+}
+
+// WithAllowedHosts restricts the client to the given hosts. Requests, and
+// redirects, to any other host fail with ErrHostNotAllowed. An entry matches
+// the exact host or any of its subdomains ("github.com" allows
+// "api.github.com"). The base URL host is always allowed. By default the
+// client is unrestricted.
+func WithAllowedHosts(hosts ...string) Option {
+	return func(c *Client) {
+		for _, h := range hosts {
+			if h = strings.ToLower(strings.TrimSpace(h)); h != "" {
+				c.allowedHosts = append(c.allowedHosts, h)
+			}
+		}
+	}
 }
 
 // Release represents a GitHub release.
@@ -119,7 +148,7 @@ func (e *RateLimitError) Is(target error) bool { return target == ErrRateLimited
 // NewClient creates a GitHub API client.
 // Token is optional but recommended to avoid rate limits.
 // If token is empty, tries GITHUB_TOKEN environment variable.
-func NewClient(token string) *Client {
+func NewClient(token string, opts ...Option) *Client {
 	if token == "" {
 		token = os.Getenv("GITHUB_TOKEN")
 	}
@@ -140,25 +169,29 @@ func NewClient(token string) *Client {
 		},
 	}
 
-	return &Client{
-		httpClient: httpClient,
-		token:      token,
-		baseURL:    "https://api.github.com",
-	}
+	return newClient(httpClient, token, opts)
 }
 
 // NewClientWithHTTP creates a client with a custom HTTP client.
 // Allows callers to configure timeouts, proxies, etc.
-func NewClientWithHTTP(httpClient *http.Client, token string) *Client {
+func NewClientWithHTTP(httpClient *http.Client, token string, opts ...Option) *Client {
 	if token == "" {
 		token = os.Getenv("GITHUB_TOKEN")
 	}
 
-	return &Client{
+	return newClient(httpClient, token, opts)
+}
+
+func newClient(httpClient *http.Client, token string, opts []Option) *Client {
+	c := &Client{
 		httpClient: httpClient,
 		token:      token,
 		baseURL:    "https://api.github.com",
 	}
+	for _, opt := range opts {
+		opt(c)
+	}
+	return c
 }
 
 // LatestRelease fetches the latest release tag for a repository.
@@ -381,17 +414,12 @@ func (r apiRelease) toRelease() *Release {
 
 // FetchChecksums downloads and parses a checksum file.
 func (c *Client) FetchChecksums(ctx context.Context, url string) (map[string]string, error) {
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	req, err := c.newRequest(ctx, url, "application/octet-stream")
 	if err != nil {
 		return nil, err
 	}
 
-	if c.token != "" {
-		req.Header.Set("Authorization", "Bearer "+c.token)
-	}
-	req.Header.Set("Accept", "application/octet-stream")
-
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.send(req)
 	if err != nil {
 		return nil, err
 	}
@@ -405,17 +433,11 @@ func (c *Client) FetchChecksums(ctx context.Context, url string) (map[string]str
 }
 
 func (c *Client) doGet(ctx context.Context, url string, v interface{}) error {
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	req, err := c.newRequest(ctx, url, "application/vnd.github.v3+json")
 	if err != nil {
 		return err
 	}
-
-	if c.token != "" {
-		req.Header.Set("Authorization", "Bearer "+c.token)
-	}
-	req.Header.Set("Accept", "application/vnd.github.v3+json")
-
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.send(req)
 	if err != nil {
 		return err
 	}
@@ -435,6 +457,25 @@ func (c *Client) doGet(ctx context.Context, url string, v interface{}) error {
 		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
 }
+
+// newRequest builds a GET request. (Stub: no host policy yet.)
+func (c *Client) newRequest(ctx context.Context, rawURL, accept string) (*http.Request, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	if c.token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.token)
+	}
+	req.Header.Set("Accept", accept)
+	return req, nil
+}
+
+func (c *Client) send(req *http.Request) (*http.Response, error) { return c.httpClient.Do(req) }
+
+func (c *Client) hostAllowed(string) bool { return true }
+
+func (c *Client) tokenHost(string) bool { return true }
 
 // wrapFetchErr wraps a doGet error as ErrReleaseNotFound, unless it is already a
 // *RateLimitError — in which case it is returned directly so errors.Is/As callers
