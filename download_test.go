@@ -157,7 +157,8 @@ func TestDownloadWithAuth(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient("secret-token")
+	// The token is only sent to GitHub hosts or the API base host; the test server is the base host.
+	client := NewClient("secret-token", WithBaseURL(server.URL))
 
 	var buf bytes.Buffer
 	_, err := client.Download(server.URL, &buf, DownloadOptions{})

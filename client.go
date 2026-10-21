@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -458,24 +459,90 @@ func (c *Client) doGet(ctx context.Context, url string, v interface{}) error {
 	}
 }
 
-// newRequest builds a GET request. (Stub: no host policy yet.)
+// newRequest builds a GET request, enforcing the host allowlist and attaching
+// the token only for GitHub-owned hosts (or the API base host).
 func (c *Client) newRequest(ctx context.Context, rawURL, accept string) (*http.Request, error) {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return nil, err
+	}
+	if !c.hostAllowed(u.Hostname()) {
+		return nil, fmt.Errorf("%w: %s", ErrHostNotAllowed, u.Hostname())
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
 		return nil, err
 	}
-	if c.token != "" {
+	if c.token != "" && c.tokenHost(u.Hostname()) {
 		req.Header.Set("Authorization", "Bearer "+c.token)
 	}
 	req.Header.Set("Accept", accept)
 	return req, nil
 }
 
-func (c *Client) send(req *http.Request) (*http.Response, error) { return c.httpClient.Do(req) }
+// send performs req using a per-request copy of the HTTP client whose redirect
+// policy enforces the host allowlist and strips the token on redirects to
+// non-GitHub hosts. The caller's http.Client is never mutated.
+func (c *Client) send(req *http.Request) (*http.Response, error) {
+	hc := *c.httpClient
+	prev := c.httpClient.CheckRedirect
+	hc.CheckRedirect = func(r *http.Request, via []*http.Request) error {
+		host := r.URL.Hostname()
+		if !c.hostAllowed(host) {
+			return fmt.Errorf("%w: %s", ErrHostNotAllowed, host)
+		}
+		if !c.tokenHost(host) {
+			r.Header.Del("Authorization")
+		}
+		if prev != nil {
+			return prev(r, via)
+		}
+		if len(via) >= 10 {
+			return errors.New("stopped after 10 redirects")
+		}
+		return nil
+	}
+	return hc.Do(req)
+}
 
-func (c *Client) hostAllowed(string) bool { return true }
+func (c *Client) baseHost() string {
+	u, err := url.Parse(c.baseURL)
+	if err != nil {
+		return ""
+	}
+	return strings.ToLower(u.Hostname())
+}
 
-func (c *Client) tokenHost(string) bool { return true }
+// hostAllowed reports whether host may be contacted. Unrestricted by default.
+func (c *Client) hostAllowed(host string) bool {
+	if len(c.allowedHosts) == 0 {
+		return true
+	}
+	host = strings.ToLower(host)
+	if host == c.baseHost() {
+		return true
+	}
+	for _, allowed := range c.allowedHosts {
+		if hostMatches(host, allowed) {
+			return true
+		}
+	}
+	return false
+}
+
+// tokenHost reports whether the token may be sent to host.
+func (c *Client) tokenHost(host string) bool {
+	host = strings.ToLower(host)
+	return host == c.baseHost() ||
+		hostMatches(host, "github.com") ||
+		hostMatches(host, "githubusercontent.com")
+}
+
+// hostMatches reports whether host equals domain or is a subdomain of it,
+// matching on a dot boundary ("evilgithub.com" does not match "github.com").
+func hostMatches(host, domain string) bool {
+	return host == domain || strings.HasSuffix(host, "."+domain)
+}
 
 // wrapFetchErr wraps a doGet error as ErrReleaseNotFound, unless it is already a
 // *RateLimitError — in which case it is returned directly so errors.Is/As callers

@@ -34,17 +34,14 @@ func (c *Client) Download(url string, w io.Writer, opts DownloadOptions) (*Downl
 		ctx = context.Background()
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	// No timeout is applied here: the body is bounded only by ctx so large
+	// artifacts are not cut off mid-stream.
+	req, err := c.newRequest(ctx, url, "application/octet-stream")
 	if err != nil {
 		return nil, err
 	}
 
-	if c.token != "" {
-		req.Header.Set("Authorization", "Bearer "+c.token)
-	}
-	req.Header.Set("Accept", "application/octet-stream")
-
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.send(req)
 	if err != nil {
 		return nil, err
 	}
