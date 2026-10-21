@@ -69,5 +69,53 @@ func ValidateHash(computed, expected string) error {
 	return nil
 }
 
-// ParseChecksumFileLenient parses checksum files tolerantly. Stub.
-func ParseChecksumFileLenient(r io.Reader) (map[string]string, error) { return nil, nil }
+// isHex64 reports whether s is a 64-character hex digest.
+func isHex64(s string) bool {
+	if len(s) != 64 {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') && (c < 'A' || c > 'F') {
+			return false
+		}
+	}
+	return true
+}
+
+// ParseChecksumFileLenient parses checksum files tolerantly. Unlike
+// ParseChecksumFile it never fails on malformed content:
+//   - blank lines, "#" comments, and lines whose first field is not a 64-char
+//     hex digest are skipped silently;
+//   - the hash is lower-cased;
+//   - the filename is the last field, with a leading "*" (binary-mode marker)
+//     stripped;
+//   - a line holding only a hash stores the digest under the key "" (used by
+//     single-entry .sha256sum files).
+//
+// The only error returned is a read error from r.
+func ParseChecksumFileLenient(r io.Reader) (map[string]string, error) {
+	checksums := make(map[string]string)
+	scanner := bufio.NewScanner(r)
+
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		fields := strings.Fields(line)
+		if !isHex64(fields[0]) {
+			continue
+		}
+		name := ""
+		if len(fields) > 1 {
+			name = strings.TrimPrefix(fields[len(fields)-1], "*")
+		}
+		checksums[name] = strings.ToLower(fields[0])
+	}
+
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("error reading checksum file: %w", err)
+	}
+	return checksums, nil
+}

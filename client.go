@@ -1,10 +1,12 @@
 package ghrelease
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -415,14 +417,28 @@ func (r apiRelease) toRelease() *Release {
 	return rel
 }
 
-// FetchChecksumsLenient downloads and parses a checksum file leniently
-// (see ParseChecksumFileLenient). Stub.
-func (c *Client) FetchChecksumsLenient(ctx context.Context, url string) (map[string]string, error) {
-	return nil, nil
+// FetchChecksums downloads and parses a checksum file strictly (see ParseChecksumFile).
+func (c *Client) FetchChecksums(ctx context.Context, url string) (map[string]string, error) {
+	body, err := c.fetchBody(ctx, url)
+	if err != nil {
+		return nil, err
+	}
+	return ParseChecksumFile(bytes.NewReader(body))
 }
 
-// FetchChecksums downloads and parses a checksum file.
-func (c *Client) FetchChecksums(ctx context.Context, url string) (map[string]string, error) {
+// FetchChecksumsLenient downloads and parses a checksum file leniently
+// (see ParseChecksumFileLenient).
+func (c *Client) FetchChecksumsLenient(ctx context.Context, url string) (map[string]string, error) {
+	body, err := c.fetchBody(ctx, url)
+	if err != nil {
+		return nil, err
+	}
+	return ParseChecksumFileLenient(bytes.NewReader(body))
+}
+
+// fetchBody GETs url and returns the body, applying the default API timeout when
+// ctx has no deadline. Non-200 responses return *HTTPStatusError.
+func (c *Client) fetchBody(ctx context.Context, url string) ([]byte, error) {
 	ctx, cancel := withDefaultTimeout(ctx)
 	defer cancel()
 
@@ -430,7 +446,6 @@ func (c *Client) FetchChecksums(ctx context.Context, url string) (map[string]str
 	if err != nil {
 		return nil, err
 	}
-
 	resp, err := c.send(req)
 	if err != nil {
 		return nil, err
@@ -440,8 +455,7 @@ func (c *Client) FetchChecksums(ctx context.Context, url string) (map[string]str
 	if resp.StatusCode != http.StatusOK {
 		return nil, &HTTPStatusError{URL: url, StatusCode: resp.StatusCode}
 	}
-
-	return ParseChecksumFile(resp.Body)
+	return io.ReadAll(resp.Body)
 }
 
 func (c *Client) doGet(ctx context.Context, url string, v interface{}) error {
