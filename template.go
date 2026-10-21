@@ -119,7 +119,8 @@ func lookupVar(vars TemplateVars, name string) (string, bool) {
 	case "ext":
 		return vars.Ext, true
 	default:
-		return "", false
+		v, ok := vars.Extra[name]
+		return v, ok
 	}
 }
 
