@@ -1,0 +1,101 @@
+name: Release modules
+
+# pgp and sigstore are separate Go modules, so each is released with a tag prefixed by
+# its directory (for example "pgp/v0.1.0"), independently of the root module's "v*" tags.
+# The root Release workflow does not fire for these: "v*" does not match "pgp/v0.1.0".
+on:
+  push:
+    tags:
+      - "pgp/v*"
+      - "sigstore/v*"
+
+permissions:
+  contents: write
+
+env:
+  CI: true
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/rancher/ci-image/go1.26:latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+
+      - name: Parse and validate tag
+        id: tag
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          MODULE="${TAG%%/*}"
+          VERSION="${TAG#*/}"
+
+          # Go requires a /vN path suffix from v2 on, which these module paths do not have.
+          if ! echo "$VERSION" | grep -Eq '^v[01]\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
+            echo "::error::'$VERSION' is not a v0/v1 semantic version (v2+ needs a /vN module path)"
+            exit 1
+          fi
+          # A replace directive is ignored for dependents, so a module released with one
+          # would build here but not for its users.
+          if grep -Eq '^replace|^\s+.*=>' "$MODULE/go.mod"; then
+            echo "::error::$MODULE/go.mod contains a replace directive"
+            exit 1
+          fi
+
+          {
+            echo "module=$MODULE"
+            echo "version=$VERSION"
+            case "$VERSION" in *-*) echo "prerelease=--prerelease" ;; *) echo "prerelease=" ;; esac
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Test module
+        working-directory: ${{ steps.tag.outputs.module }}
+        run: go test -v -race ./...
+
+      # The integration module exercises both verifiers with the real client.
+      - name: Run integration tests
+        working-directory: integration
+        run: go test -v -race ./...
+
+      - name: Generate release notes
+        env:
+          TAG: ${{ github.ref_name }}
+          MODULE: ${{ steps.tag.outputs.module }}
+        run: |
+          PREV_TAG=$(git tag -l "${MODULE}/v*" --sort=-version:refname | grep -vx "$TAG" | head -n 1)
+          if [ -z "$PREV_TAG" ]; then
+            echo "No previous $MODULE tag found, using full history"
+            RANGE="$TAG"
+          else
+            RANGE="${PREV_TAG}..${TAG}"
+          fi
+          # Only user-facing changes that touched this module's directory.
+          COMMITS=$(git log "$RANGE" --oneline --no-merges --extended-regexp \
+            --grep='^(feat|fix|perf|docs)(\([^)]+\))?!?:' --grep='^BREAKING CHANGE:' -- "$MODULE")
+          if [ -z "$COMMITS" ]; then
+            printf 'No changes in this release.\n' > notes.md
+          else
+            printf '## Changes\n\n%s\n' "$COMMITS" > notes.md
+          fi
+          cat notes.md
+
+      - name: Create GitHub release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+          PRERELEASE: ${{ steps.tag.outputs.prerelease }}
+        run: |
+          gh release create "$TAG" --title "$TAG" --notes-file notes.md $PRERELEASE
+
+      - name: Verify Go module proxy
+        env:
+          MODULE: ${{ steps.tag.outputs.module }}
+          VERSION: ${{ steps.tag.outputs.version }}
+        run: |
+          sleep 30
+          echo "Verifying module availability: github.com/mallardduck/ghreleases/${MODULE}@${VERSION}"
+          GOPROXY=https://proxy.golang.org go list -m "github.com/mallardduck/ghreleases/${MODULE}@${VERSION}" || \
+            echo "Warning: Module not yet available on proxy.golang.org (may take a few minutes)"

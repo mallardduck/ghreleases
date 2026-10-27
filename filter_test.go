@@ -447,3 +447,22 @@ func TestGroupByMinorVersion(t *testing.T) {
 		})
 	}
 }
+
+func TestReleaseFilter_OptionsCompose(t *testing.T) {
+	want := ReleaseFilter{TagPrefix: "cli/", IncludePrereleases: true}
+	tests := []struct {
+		name string
+		ctx  context.Context
+	}{
+		{"prefix then prereleases", WithPrereleases(WithTagPrefix(context.Background(), "cli/"), true)},
+		{"prereleases then prefix", WithTagPrefix(WithPrereleases(context.Background(), true), "cli/")},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := releaseFilterFromContext(tt.ctx)
+			if !ok || got != want {
+				t.Errorf("releaseFilterFromContext() = %+v, %v; want %+v", got, ok, want)
+			}
+		})
+	}
+}

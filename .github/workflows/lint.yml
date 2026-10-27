@@ -19,6 +19,13 @@ jobs:
         run:
           GOLANGCI_LINT_CACHE=$(mktemp -d) golangci-lint run --timeout=5m --verbose
 
+      # Nested modules are not covered by a root run.
+      - name: golangci-lint (sub-modules)
+        run: |
+          for m in pgp sigstore integration; do
+            (cd "$m" && GOLANGCI_LINT_CACHE=$(mktemp -d) golangci-lint run --timeout=5m) || exit 1
+          done
+
   formatting:
     name: Code Formatting
     runs-on: ubuntu-latest
