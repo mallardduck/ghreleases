@@ -51,6 +51,14 @@ func WithBundleSuffix(suffix string) Option {
 	return func(v *Verifier) {} // stub: not implemented yet
 }
 
+// WithInsecureSubjectPattern is an escape hatch: it lets NewVerifier accept a
+// SubjectRegexp that is unanchored or matches any signer. A valid signature from
+// an arbitrary identity proves nothing about authenticity, so only use it when
+// you deliberately want that.
+func WithInsecureSubjectPattern() Option {
+	return func(v *Verifier) {} // stub: not implemented yet
+}
+
 // Verifier authenticates a manifest against a Sigstore bundle and a pinned
 // signer Identity. It implements ghrelease.ManifestVerifier.
 type Verifier struct {
