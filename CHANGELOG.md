@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+### Added (additive APIs)
+
+- `WithPrereleases(ctx, true)` makes `LatestRelease` include prereleases and return the highest
+  semver tag instead of the most recently published one. Drafts stay excluded. Composes with
+  `WithTagPrefix`. Default behavior is unchanged.
+- `CompareVersions(a, b)` compares release tags by semver precedence (main version first, then
+  prerelease identifiers per the semver spec).
+- `ReleaseFilter.IncludePrereleases`.
+
+### Behaviour changes
+
+- `WithTagPrefix` now preserves other filter settings already on the context instead of replacing them.
+
 ## v0.7.0
 
 ### Added (additive APIs)
