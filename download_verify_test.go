@@ -9,8 +9,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"path/filepath"
-	"runtime"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -458,80 +456,6 @@ func TestDownload_SpoolsToConfiguredTempDirAndCleansUp(t *testing.T) {
 	}
 }
 
-func TestDownloadToFile(t *testing.T) {
-	good := computeSHA256(artifactBody)
-
-	t.Run("success writes the file with the requested mode and leaves nothing else", func(t *testing.T) {
-		dir := t.TempDir()
-		dest := filepath.Join(dir, "tool")
-		srv := newArtifactServer(t, artifactBody, strp("good"))
-		c := NewClient("", WithArtifactVerifier(&fakeArtifactVerifier{}))
-
-		res, err := c.DownloadToFile(srv.URL+"/tool.tar.gz", dest, 0o755, DownloadOptions{ExpectedHash: good})
-		if err != nil {
-			t.Fatalf("DownloadToFile() = %v", err)
-		}
-		if res.Hash != good {
-			t.Errorf("hash = %s", res.Hash)
-		}
-		got, err := os.ReadFile(dest)
-		if err != nil || !bytes.Equal(got, artifactBody) {
-			t.Fatalf("destination content wrong (err %v)", err)
-		}
-		// Windows has no Unix permission bits to compare.
-		if fi, _ := os.Stat(dest); runtime.GOOS != "windows" && fi.Mode().Perm() != 0o755 {
-			t.Errorf("mode = %v, want 0755", fi.Mode().Perm())
-		}
-		if entries, _ := os.ReadDir(dir); len(entries) != 1 {
-			t.Errorf("%d entries in destination dir, want only the file", len(entries))
-		}
-	})
-
-	failures := []struct {
-		name string
-		sig  *string
-		opts DownloadOptions
-		want error
-	}{
-		{"bad signature", strp("evil"), DownloadOptions{}, ErrSignatureInvalid},
-		{"missing signature", nil, DownloadOptions{}, ErrSignatureMissing},
-		{"hash mismatch", strp("good"), DownloadOptions{ExpectedHash: computeSHA256([]byte("other"))}, ErrChecksumMismatch},
-	}
-	for _, tt := range failures {
-		t.Run(tt.name+" leaves an existing file untouched", func(t *testing.T) {
-			dir := t.TempDir()
-			dest := filepath.Join(dir, "tool")
-			if err := os.WriteFile(dest, []byte("old"), 0o644); err != nil {
-				t.Fatal(err)
-			}
-			srv := newArtifactServer(t, artifactBody, tt.sig)
-			c := NewClient("", WithArtifactVerifier(&fakeArtifactVerifier{}))
-
-			if _, err := c.DownloadToFile(srv.URL+"/tool.tar.gz", dest, 0o755, tt.opts); !errors.Is(err, tt.want) {
-				t.Fatalf("err = %v, want %v", err, tt.want)
-			}
-			if got, _ := os.ReadFile(dest); string(got) != "old" {
-				t.Errorf("existing file was modified: %q", got)
-			}
-			if entries, _ := os.ReadDir(dir); len(entries) != 1 {
-				t.Errorf("%d entries left in destination dir, want 1", len(entries))
-			}
-		})
-		t.Run(tt.name+" creates nothing when there was no file", func(t *testing.T) {
-			dir := t.TempDir()
-			srv := newArtifactServer(t, artifactBody, tt.sig)
-			c := NewClient("", WithArtifactVerifier(&fakeArtifactVerifier{}))
-
-			if _, err := c.DownloadToFile(srv.URL+"/tool.tar.gz", filepath.Join(dir, "tool"), 0o755, tt.opts); !errors.Is(err, tt.want) {
-				t.Fatalf("err = %v, want %v", err, tt.want)
-			}
-			if entries, _ := os.ReadDir(dir); len(entries) != 0 {
-				t.Errorf("%d file(s) left behind", len(entries))
-			}
-		})
-	}
-}
-
 // Opting into artifact verification with a verifier that is nil can never
 // verify anything, so every download path must fail closed before any I/O.
 func TestWithArtifactVerifier_NilFailsClosed(t *testing.T) {
@@ -541,12 +465,10 @@ func TestWithArtifactVerifier_NilFailsClosed(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			c := NewClient("", WithArtifactVerifier(v))
 			url := srv.URL + "/tool.tar.gz"
-			dest := filepath.Join(t.TempDir(), "tool")
 
 			calls := map[string]func() error{
 				"Download":        func() error { _, err := c.Download(url, io.Discard, DownloadOptions{}); return err },
 				"DownloadToBytes": func() error { _, _, err := c.DownloadToBytes(url, DownloadOptions{}); return err },
-				"DownloadToFile":  func() error { _, err := c.DownloadToFile(url, dest, 0o644, DownloadOptions{}); return err },
 			}
 			for method, call := range calls {
 				before := srv.bodies() + srv.sigs()
@@ -565,9 +487,6 @@ func TestWithArtifactVerifier_NilFailsClosed(t *testing.T) {
 				if got := srv.bodies() + srv.sigs() - before; got != 0 {
 					t.Errorf("%s: made %d request(s) before failing", method, got)
 				}
-			}
-			if _, err := os.Stat(dest); err == nil {
-				t.Error("DownloadToFile created the destination")
 			}
 		})
 	}

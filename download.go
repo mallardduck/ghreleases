@@ -10,7 +10,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"path/filepath"
 )
 
 // DownloadOptions configures asset download behavior.
@@ -62,12 +61,6 @@ var errVerifierFinished = errors.New("verifier returned before reading the whole
 // all checks pass. Set opts.StreamUnverified to write as bytes arrive instead.
 // With nothing to verify, bytes stream straight to w.
 func (c *Client) Download(url string, w io.Writer, opts DownloadOptions) (*DownloadResult, error) {
-	return c.download(url, w, opts, !opts.StreamUnverified)
-}
-
-// download implements Download. hold reports whether the asset must be held
-// back from w until the checks pass; it only has an effect when there are checks.
-func (c *Client) download(url string, w io.Writer, opts DownloadOptions, hold bool) (*DownloadResult, error) {
 	if c.artifactVerifierErr != nil {
 		return nil, c.artifactVerifierErr
 	}
@@ -110,7 +103,7 @@ func (c *Client) download(url string, w io.Writer, opts DownloadOptions, hold bo
 	hasChecks := c.artifactVerifier != nil || opts.ExpectedHash != ""
 	dst := w
 	var spool *os.File
-	if hold && hasChecks {
+	if !opts.StreamUnverified && hasChecks {
 		if spool, err = os.CreateTemp(opts.TempDir, "ghreleases-*"); err != nil {
 			return nil, fmt.Errorf("download failed: create temporary file: %w", err)
 		}
@@ -213,39 +206,6 @@ func (r *verifyRun) wait(ctx context.Context) (verdict error, err error) {
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
-}
-
-// DownloadToFile downloads an asset to path, creating the file with perm only
-// after every requested check (ExpectedHash, signature) has passed. On any
-// failure path is left exactly as it was: an existing file is not replaced and
-// no partial or temporary file remains. The asset is held in a temporary file in
-// path's directory and renamed into place, so it is never visible half-written.
-// opts.StreamUnverified and opts.TempDir do not apply.
-func (c *Client) DownloadToFile(url, path string, perm os.FileMode, opts DownloadOptions) (*DownloadResult, error) {
-	if c.artifactVerifierErr != nil {
-		return nil, c.artifactVerifierErr
-	}
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".ghreleases-*")
-	if err != nil {
-		return nil, fmt.Errorf("download failed: create temporary file: %w", err)
-	}
-	defer func() { _ = os.Remove(tmp.Name()) }() // no-op once renamed into place
-
-	// The temporary file is the hold, so write to it directly.
-	res, err := c.download(url, tmp, opts, false)
-	if cerr := tmp.Close(); err == nil && cerr != nil {
-		err = fmt.Errorf("download failed: %w", cerr)
-	}
-	if err != nil {
-		return nil, err
-	}
-	if err := os.Chmod(tmp.Name(), perm); err != nil {
-		return nil, fmt.Errorf("download failed: %w", err)
-	}
-	if err := os.Rename(tmp.Name(), path); err != nil {
-		return nil, fmt.Errorf("download failed: %w", err)
-	}
-	return res, nil
 }
 
 // DownloadToBytes is a convenience wrapper that downloads to a byte slice.

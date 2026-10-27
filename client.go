@@ -110,7 +110,7 @@ func isNilInterface(v any) bool {
 	return false
 }
 
-// WithArtifactVerifier makes Download, DownloadToBytes and DownloadToFile
+// WithArtifactVerifier makes Download and DownloadToBytes
 // authenticate each asset against its detached signature. The signature is
 // fetched before the asset, from DownloadOptions.SignatureURL or, failing that,
 // next to the asset via v.SignatureName. A missing signature fails with

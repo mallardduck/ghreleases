@@ -125,14 +125,6 @@ func TestPGP_AsArtifactVerifier(t *testing.T) {
 		t.Fatalf("tampered asset: err %v with %d bytes written", err, buf.Len())
 	}
 
-	// And DownloadToFile leaves nothing behind.
-	dest := filepath.Join(t.TempDir(), "out")
-	if _, err := c.DownloadToFile(tampered.URL+"/"+helmFile, dest, 0o644, ghrelease.DownloadOptions{}); !errors.Is(err, ghrelease.ErrSignatureInvalid) {
-		t.Fatalf("DownloadToFile err = %v", err)
-	}
-	if _, err := os.Stat(dest); err == nil {
-		t.Error("tampered asset was written to the destination")
-	}
 }
 
 func TestPGP_PinnedToWrongKeyRejects(t *testing.T) {

@@ -286,12 +286,6 @@ defer cancel()
 result, err := client.Download(assetURL, &buf, ghrelease.DownloadOptions{
     Context: ctx,
 })
-
-// Download to a file: it only appears at path once every check has passed, and a
-// failure leaves any existing file untouched (no partial or temporary file remains)
-result, err := client.DownloadToFile(assetURL, "/usr/local/bin/tool", 0o755, ghrelease.DownloadOptions{
-    ExpectedHash: "abc123...",
-})
 ```
 
 #### Nothing is written until it is verified

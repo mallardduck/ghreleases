@@ -53,12 +53,3 @@ func ExampleWithArtifactVerifier() {
 	fmt.Println(rejectAll{}.SignatureName("tool.tar.gz"))
 	// Output: tool.tar.gz.sig
 }
-
-// DownloadToFile creates the destination only after every check has passed, and
-// leaves an existing file untouched on any failure.
-func ExampleClient_DownloadToFile() {
-	c := ghrelease.NewClient("")
-	_ = c // c.DownloadToFile(assetURL, "/usr/local/bin/tool", 0o755, ghrelease.DownloadOptions{ExpectedHash: sha256Hex})
-	fmt.Println("created only if verified")
-	// Output: created only if verified
-}
