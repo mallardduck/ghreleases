@@ -829,3 +829,28 @@ func TestListAllReleases_withOpts(t *testing.T) {
 		}
 	})
 }
+
+func TestLatestRelease_TagPrefixSkipsPrereleases(t *testing.T) {
+	const page = `[
+		{"id":1,"tag_name":"v1.1.0-rc.2","draft":false,"prerelease":true,"published_at":"2026-03-01T00:00:00Z","assets":[]},
+		{"id":2,"tag_name":"v1.0.5","draft":false,"prerelease":false,"published_at":"2026-02-10T00:00:00Z","assets":[]}
+	]`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("page") == "1" {
+			_, _ = w.Write([]byte(page))
+			return
+		}
+		_, _ = w.Write([]byte(`[]`))
+	}))
+	defer server.Close()
+
+	client := NewClient("")
+	client.baseURL = server.URL
+	tag, err := client.LatestRelease(WithTagPrefix(context.Background(), "v"), "owner", "repo")
+	if err != nil {
+		t.Fatalf("LatestRelease() error = %v", err)
+	}
+	if tag != "v1.0.5" {
+		t.Errorf("LatestRelease() = %q, want %q", tag, "v1.0.5")
+	}
+}
