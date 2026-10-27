@@ -177,7 +177,9 @@ expectedHash := checksums["myapp-linux-amd64"]
 checksums, err := client.FetchChecksumsLenient(ctx, checksumURL)
 
 // Multi-hash files (e.g. mikefarah/yq): "<filename> <hash> <hash> ..." plus a
-// sibling file naming the columns. The exact "SHA-256" column is selected.
+// sibling file naming the columns. The exact "SHA-256" column is selected. Only
+// the checksum file is signature-verified; the column-order file is not, and
+// tampering with it can only cause a mismatch, not a false pass.
 checksums, err := client.FetchMultiHashChecksums(ctx, checksumsURL, hashesOrderURL)
 ```
 

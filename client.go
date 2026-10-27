@@ -579,6 +579,13 @@ func (c *Client) FetchChecksumsLenient(ctx context.Context, url string) (map[str
 
 // FetchMultiHashChecksums downloads a multi-hash checksum file and its sibling
 // hash-order file, then returns the SHA-256 column (see ParseMultiHashChecksumFile).
+//
+// Only the checksum file is authenticated by WithManifestVerifier; the hash-order
+// file is fetched unverified, since such files are not normally signed. It only
+// picks which column is read, and every column lives in the authenticated
+// checksum file, so tampering with it selects a different hash for the same
+// asset: a download checked against it fails with ErrChecksumMismatch, it cannot
+// make a forged asset pass.
 func (c *Client) FetchMultiHashChecksums(ctx context.Context, checksumURL, orderURL string) (map[string]string, error) {
 	body, err := c.fetchManifest(ctx, checksumURL)
 	if err != nil {
