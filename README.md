@@ -274,7 +274,7 @@ fmt.Println("Size:", result.Size)
 result, err := client.Download(assetURL, &buf, ghrelease.DownloadOptions{
     ExpectedHash: "abc123...",  // SHA-256 hex
 })
-// Returns ErrChecksumMismatch if hash doesn't match
+// Returns ErrChecksumMismatch if hash doesn't match, and buf receives nothing
 
 // Download to byte slice (convenience wrapper)
 data, result, err := client.DownloadToBytes(assetURL, ghrelease.DownloadOptions{})
@@ -304,6 +304,11 @@ your destination. With nothing to verify, bytes stream straight through.
 `DownloadOptions.StreamUnverified` is the explicit escape hatch: bytes are written as they arrive,
 the checks still run, but on failure the destination already holds unverified data and is yours to
 discard. `DownloadToBytes` always streams into its buffer, since the buffer is dropped on failure.
+
+> **Behavior change:** in releases up to and including v0.7.0, `Download` wrote to your writer as bytes
+> arrived, so a failed `ExpectedHash` check could leave unverified data in it. Code that already
+> discarded the writer on error is unaffected. If you relied on streaming into the writer while the
+> hash was still being checked, set `StreamUnverified: true` to keep that behavior.
 
 ### Archive Extraction
 

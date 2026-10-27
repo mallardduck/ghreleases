@@ -15,7 +15,9 @@ import (
 
 // DownloadOptions configures asset download behavior.
 type DownloadOptions struct {
-	// If set, validates downloaded content against this hash (SHA-256 hex, case-insensitive)
+	// If set, validates downloaded content against this hash (SHA-256 hex,
+	// case-insensitive). Unless StreamUnverified is set, the destination receives
+	// nothing when the hash does not match.
 	ExpectedHash string
 
 	// Context for cancellation (optional)
