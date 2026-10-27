@@ -89,3 +89,25 @@ func TestOneVerifierServesManifestAndArtifactRoles(t *testing.T) {
 		t.Errorf("Verify calls = %d after the artifact role, want 1", v.calls)
 	}
 }
+
+// The boundary case: a verifier that stops one byte short has still left part of
+// the content unauthenticated, for manifests and for downloaded assets alike.
+func TestVerifierThatStopsOneByteShortIsRejected(t *testing.T) {
+	t.Run("manifest", func(t *testing.T) {
+		srv := verifyServer(t, strp("good"))
+		v := &fakeArtifactVerifier{readLimit: int64(len(verifyManifest)) - 1}
+		sums, err := NewClient("", WithManifestVerifier(v)).FetchChecksums(context.Background(), srv.URL+"/checksums.txt")
+		if !errors.Is(err, ErrSignatureInvalid) || sums != nil {
+			t.Fatalf("got (%v, %v), want (nil, ErrSignatureInvalid)", sums, err)
+		}
+	})
+	t.Run("artifact", func(t *testing.T) {
+		srv := newArtifactServer(t, artifactBody, strp("good"))
+		v := &fakeArtifactVerifier{readLimit: int64(len(artifactBody)) - 1}
+		var buf bytes.Buffer
+		res, err := NewClient("", WithArtifactVerifier(v)).Download(srv.URL+"/tool.tar.gz", &buf, DownloadOptions{})
+		if !errors.Is(err, ErrSignatureInvalid) || res != nil || buf.Len() != 0 {
+			t.Fatalf("got (%v, %v) with %d bytes written, want (nil, ErrSignatureInvalid) and none", res, err, buf.Len())
+		}
+	})
+}
