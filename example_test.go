@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 
 	ghrelease "github.com/mallardduck/ghreleases"
 )
@@ -13,7 +14,7 @@ import (
 type rejectAll struct{}
 
 func (rejectAll) SignatureName(manifest string) string { return manifest + ".sig" }
-func (rejectAll) Verify(context.Context, []byte, []byte) error {
+func (rejectAll) Verify(context.Context, io.Reader, []byte) error {
 	return errors.New("not signed by the expected party")
 }
 

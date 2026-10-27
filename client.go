@@ -27,12 +27,12 @@ type Client struct {
 	// these hosts and their subdomains, plus the base URL host.
 	allowedHosts []string
 
-	manifestVerifier ManifestVerifier
+	manifestVerifier SignatureVerifier
 	// manifestVerifierErr is set when WithManifestVerifier was given a nil
 	// verifier; every manifest fetch then fails closed.
 	manifestVerifierErr error
 
-	artifactVerifier ArtifactVerifier
+	artifactVerifier SignatureVerifier
 	// artifactVerifierErr is set when WithArtifactVerifier was given a nil
 	// verifier; every download then fails closed.
 	artifactVerifierErr error
@@ -63,18 +63,22 @@ func WithAllowedHosts(hosts ...string) Option {
 	}
 }
 
-// ManifestVerifier authenticates a checksum manifest against a detached
-// signature (for example a Sigstore bundle), closing the gap that a checksum
-// file published next to the binary proves integrity but not authenticity.
-type ManifestVerifier interface {
+// SignatureVerifier authenticates content against a detached signature, for
+// example a Sigstore bundle or an OpenPGP .asc file. A checksum file published
+// next to a binary proves integrity but not authenticity; verifying a signature
+// closes that gap, whether the content is the checksum manifest
+// (WithManifestVerifier) or the downloaded asset itself (WithArtifactVerifier).
+// One implementation can serve both roles.
+type SignatureVerifier interface {
 	// SignatureName returns the asset name of the detached signature for the
-	// manifest asset named manifestName (e.g. "checksums.txt" ->
-	// "checksums.txt.sigstore.json").
-	SignatureName(manifestName string) string
+	// asset named assetName (e.g. "checksums.txt" -> "checksums.txt.sigstore.json",
+	// "tool.tar.gz" -> "tool.tar.gz.asc").
+	SignatureName(assetName string) string
 
-	// Verify reports whether signature authenticates exactly these manifest
-	// bytes. Any non-nil error rejects the manifest.
-	Verify(ctx context.Context, manifest, signature []byte) error
+	// Verify reports whether signature authenticates exactly the bytes read from
+	// content. It must read content to EOF; returning nil having read less is
+	// treated as a failure. Any non-nil error rejects the content.
+	Verify(ctx context.Context, content io.Reader, signature []byte) error
 }
 
 // WithManifestVerifier makes FetchChecksums, FetchChecksumsLenient and
@@ -83,7 +87,7 @@ type ManifestVerifier interface {
 // missing signature fails with ErrSignatureMissing, a rejected one with
 // ErrSignatureInvalid, so enabling a verifier can never silently fall back to
 // unauthenticated checksums. Without this option behavior is unchanged.
-func WithManifestVerifier(v ManifestVerifier) Option {
+func WithManifestVerifier(v SignatureVerifier) Option {
 	return func(c *Client) {
 		c.manifestVerifier, c.manifestVerifierErr = v, nil
 		if isNilInterface(v) {
@@ -106,20 +110,6 @@ func isNilInterface(v any) bool {
 	return false
 }
 
-// ArtifactVerifier authenticates a downloaded asset against a detached
-// signature (for example a Sigstore bundle or an OpenPGP .asc file), so the
-// asset itself - not just a checksum file next to it - is proven authentic.
-type ArtifactVerifier interface {
-	// SignatureName returns the asset name of the detached signature for the
-	// asset named artifactName (e.g. "tool.tar.gz" -> "tool.tar.gz.asc").
-	SignatureName(artifactName string) string
-
-	// Verify reports whether signature authenticates exactly the bytes read
-	// from artifact. It must read artifact to EOF; returning nil having read
-	// less is treated as a failure. Any non-nil error rejects the download.
-	Verify(ctx context.Context, artifact io.Reader, signature []byte) error
-}
-
 // WithArtifactVerifier makes Download, DownloadToBytes and DownloadToFile
 // authenticate each asset against its detached signature. The signature is
 // fetched before the asset, from DownloadOptions.SignatureURL or, failing that,
@@ -130,7 +120,7 @@ type ArtifactVerifier interface {
 //
 // While a download is being verified the destination receives no bytes (see
 // DownloadOptions.StreamUnverified).
-func WithArtifactVerifier(v ArtifactVerifier) Option {
+func WithArtifactVerifier(v SignatureVerifier) Option {
 	return func(c *Client) {
 		c.artifactVerifier, c.artifactVerifierErr = v, nil
 		if isNilInterface(v) {
@@ -145,7 +135,7 @@ type signatureURLKey struct{}
 // exactly where the manifest's detached signature lives. Use it when the
 // manifest URL is a GitHub API asset URL (".../releases/assets/<id>"), where
 // the signature cannot be found by name: look it up in Release.Assets using
-// ManifestVerifier.SignatureName and pass its URL here. Without it the
+// SignatureVerifier.SignatureName and pass its URL here. Without it the
 // signature is expected next to the manifest, at the same URL with the last
 // path segment replaced by SignatureName.
 func WithSignatureURL(ctx context.Context, url string) context.Context {
@@ -605,7 +595,7 @@ func (c *Client) FetchMultiHashChecksums(ctx context.Context, checksumURL, order
 	return ParseMultiHashChecksumFile(bytes.NewReader(body), order)
 }
 
-// fetchManifest fetches a checksum manifest and, when a ManifestVerifier is
+// fetchManifest fetches a checksum manifest and, when a SignatureVerifier is
 // configured, authenticates it against its detached signature.
 func (c *Client) fetchManifest(ctx context.Context, url string) ([]byte, error) {
 	if c.manifestVerifierErr != nil {
@@ -626,7 +616,7 @@ func (c *Client) fetchManifest(ctx context.Context, url string) ([]byte, error) 
 	if err != nil {
 		return nil, err
 	}
-	if err := c.manifestVerifier.Verify(ctx, body, sig); err != nil {
+	if err := c.manifestVerifier.Verify(ctx, bytes.NewReader(body), sig); err != nil {
 		return nil, &wrapped{sentinel: ErrSignatureInvalid, cause: err}
 	}
 	return body, nil

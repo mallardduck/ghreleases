@@ -24,7 +24,7 @@ func TestWithManifestVerifier_NilFailsClosed(t *testing.T) {
 	url := srv.URL + "/checksums.txt"
 
 	var typedNil *fakeVerifier
-	for name, v := range map[string]ManifestVerifier{
+	for name, v := range map[string]SignatureVerifier{
 		"untyped nil": nil,
 		"typed nil":   typedNil,
 	} {

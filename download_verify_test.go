@@ -536,7 +536,7 @@ func TestDownloadToFile(t *testing.T) {
 func TestWithArtifactVerifier_NilFailsClosed(t *testing.T) {
 	srv := newArtifactServer(t, artifactBody, strp("good"))
 	var typedNil *fakeArtifactVerifier
-	for name, v := range map[string]ArtifactVerifier{"untyped nil": nil, "typed nil": typedNil} {
+	for name, v := range map[string]SignatureVerifier{"untyped nil": nil, "typed nil": typedNil} {
 		t.Run(name, func(t *testing.T) {
 			c := NewClient("", WithArtifactVerifier(v))
 			url := srv.URL + "/tool.tar.gz"

@@ -24,7 +24,7 @@ type DownloadOptions struct {
 	// SignatureURL is the exact URL of the asset's detached signature when a
 	// verifier is configured via WithArtifactVerifier. Needed for GitHub API
 	// asset URLs, whose last path segment is an opaque ID. When empty, the
-	// signature is expected next to the asset (see ArtifactVerifier.SignatureName).
+	// signature is expected next to the asset (see SignatureVerifier.SignatureName).
 	SignatureURL string
 
 	// StreamUnverified is an escape hatch. By default, when ExpectedHash is set
@@ -190,7 +190,7 @@ type verifyRun struct {
 	done chan error
 }
 
-func startVerify(ctx context.Context, v ArtifactVerifier, sig []byte) *verifyRun {
+func startVerify(ctx context.Context, v SignatureVerifier, sig []byte) *verifyRun {
 	pr, pw := io.Pipe()
 	r := &verifyRun{pw: pw, done: make(chan error, 1)}
 	go func() {

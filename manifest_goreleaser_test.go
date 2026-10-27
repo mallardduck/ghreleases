@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -21,7 +22,11 @@ type goreleaserVerifier struct {
 
 func (v *goreleaserVerifier) SignatureName(m string) string { return m + ".sigstore.json" }
 
-func (v *goreleaserVerifier) Verify(_ context.Context, manifest, sig []byte) error {
+func (v *goreleaserVerifier) Verify(_ context.Context, content io.Reader, sig []byte) error {
+	manifest, err := io.ReadAll(content)
+	if err != nil {
+		return err
+	}
 	v.manifest, v.bundle = manifest, sig
 	return v.err
 }
@@ -193,5 +198,8 @@ func TestFetchMultiHashChecksums_VerifiesManifestOnly(t *testing.T) {
 
 type yqVerifier struct{}
 
-func (yqVerifier) SignatureName(m string) string                { return m + ".bundle" }
-func (yqVerifier) Verify(context.Context, []byte, []byte) error { return nil }
+func (yqVerifier) SignatureName(m string) string { return m + ".bundle" }
+func (yqVerifier) Verify(_ context.Context, content io.Reader, _ []byte) error {
+	_, err := io.Copy(io.Discard, content)
+	return err
+}

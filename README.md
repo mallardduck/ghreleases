@@ -115,7 +115,7 @@ for _, asset := range release.Assets {
 #### Authenticating checksum manifests (optional)
 
 A checksum file published next to the binary proves the download is intact, not that it is
-authentic: an attacker who can replace the release can replace both. A `ManifestVerifier`
+authentic: an attacker who can replace the release can replace both. A `SignatureVerifier`
 checks a detached signature over the checksum file *before* any checksum in it is trusted.
 
 ```go
@@ -128,7 +128,7 @@ checksums, err := client.FetchChecksums(ctx, checksumsURL) // also fetches and c
   returns `ErrSignatureInvalid`; the client never falls back to the unsigned checksums.
 - **Opaque asset URLs.** GitHub API asset URLs end in a numeric ID, so the signature cannot be found by
   name. Find it in `Release.Assets` via `v.SignatureName(...)` and pass `WithSignatureURL(ctx, url)`.
-- **Your choice of verifier.** `ManifestVerifier` is a two-method interface. Implement it with whatever
+- **Your choice of verifier.** `SignatureVerifier` is a two-method interface. Implement it with whatever
   library or tool you prefer, or use one of the ready-made modules below.
 
 Ready-made verifiers are **separate Go modules** so the core stays dependency-free. Importing one adds

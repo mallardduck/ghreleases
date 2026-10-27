@@ -3,6 +3,7 @@ package ghrelease
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -18,7 +19,11 @@ type fakeVerifier struct {
 
 func (f *fakeVerifier) SignatureName(manifestName string) string { return manifestName + ".sig" }
 
-func (f *fakeVerifier) Verify(_ context.Context, manifest, signature []byte) error {
+func (f *fakeVerifier) Verify(_ context.Context, content io.Reader, signature []byte) error {
+	manifest, err := io.ReadAll(content)
+	if err != nil {
+		return err
+	}
 	f.calls++
 	f.sawManifest = manifest
 	if string(signature) != "good" {
