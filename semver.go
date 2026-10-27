@@ -30,7 +30,8 @@ func parseVersion(tag string) (parsedVersion, bool) {
 		core = tag[:i]
 		v.pre = strings.Split(tag[i+1:], ".")
 		for _, id := range v.pre {
-			if id == "" {
+			// Numeric identifiers must not have leading zeros (semver §9).
+			if id == "" || (isDigits(id) && hasLeadingZero(id)) {
 				return parsedVersion{}, false
 			}
 		}
@@ -42,8 +43,10 @@ func parseVersion(tag string) (parsedVersion, bool) {
 	}
 	nums := [3]*uint64{&v.major, &v.minor, &v.patch}
 	for i, p := range parts {
+		// ParseUint also rejects the empty string and overflow; leading zeros
+		// are forbidden by semver §2.
 		n, err := strconv.ParseUint(p, 10, 64)
-		if err != nil {
+		if err != nil || hasLeadingZero(p) {
 			return parsedVersion{}, false
 		}
 		*nums[i] = n
@@ -61,9 +64,15 @@ func cmpUint(a, b uint64) int {
 	return 0
 }
 
-func isNumeric(s string) bool {
-	_, err := strconv.ParseUint(s, 10, 64)
-	return err == nil
+func hasLeadingZero(s string) bool { return len(s) > 1 && s[0] == '0' }
+
+// cmpNumeric compares two digit strings without parsing them, so identifiers
+// too large for any integer type still order correctly. Neither has a leading zero.
+func cmpNumeric(a, b string) int {
+	if c := cmpUint(uint64(len(a)), uint64(len(b))); c != 0 {
+		return c
+	}
+	return strings.Compare(a, b)
 }
 
 // comparePre compares prerelease identifier lists per semver 2.0.0 §11.
@@ -78,13 +87,11 @@ func comparePre(a, b []string) int {
 		return -1
 	}
 	for i := 0; i < len(a) && i < len(b); i++ {
-		an, bn := isNumeric(a[i]), isNumeric(b[i])
+		an, bn := isDigits(a[i]), isDigits(b[i])
 		var c int
 		switch {
 		case an && bn:
-			x, _ := strconv.ParseUint(a[i], 10, 64)
-			y, _ := strconv.ParseUint(b[i], 10, 64)
-			c = cmpUint(x, y)
+			c = cmpNumeric(a[i], b[i])
 		case an:
 			c = -1 // numeric identifiers sort below alphanumeric ones
 		case bn:

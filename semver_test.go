@@ -23,6 +23,9 @@ func TestCompareVersions(t *testing.T) {
 		{"v1.0.0-beta", "v1.0.0-beta.2", -1},
 		{"v1.0.0-beta.2", "v1.0.0-beta.11", -1},
 		{"v1.0.0-beta.11", "v1.0.0-rc.1", -1},
+		// numeric identifiers beyond uint64 still order numerically
+		{"v1.0.0-alpha.99999999999999999999", "v1.0.0-alpha.100000000000000000000", -1},
+		{"v1.0.0-99999999999999999999", "v1.0.0-alpha", -1},
 		// build metadata is ignored
 		{"v1.0.0+a", "v1.0.0+b", 0},
 		// prefixed tags compare on the version part
@@ -45,7 +48,12 @@ func TestCompareVersions(t *testing.T) {
 }
 
 func TestCompareVersions_Unparseable(t *testing.T) {
-	for _, pair := range [][2]string{{"nightly", "v1.0.0"}, {"v1.0.0", "latest"}, {"v1.0", "v1.0.0"}} {
+	for _, pair := range [][2]string{{"nightly", "v1.0.0"}, {"v1.0.0", "latest"}, {"v1.0", "v1.0.0"},
+		// leading zeros are not valid semver (§2, §9)
+		{"v1.02.3", "v1.0.0"}, {"v01.2.3", "v1.0.0"}, {"v1.2.03", "v1.0.0"}, {"v1.0.0-01", "v1.0.0"},
+		// core numbers beyond uint64 do not parse
+		{"v1.99999999999999999999.0", "v1.0.0"},
+	} {
 		if _, ok := CompareVersions(pair[0], pair[1]); ok {
 			t.Errorf("CompareVersions(%q, %q) ok = true, want false", pair[0], pair[1])
 		}
