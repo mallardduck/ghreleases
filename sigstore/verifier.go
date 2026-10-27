@@ -5,7 +5,9 @@
 //
 // The signer's identity must be pinned: a valid Sigstore signature from an
 // arbitrary identity proves nothing, so NewVerifier rejects an Identity that
-// does not name both the certificate subject and the OIDC issuer.
+// does not name both the certificate subject and the OIDC issuer, and a
+// SubjectRegexp that is unanchored or matches unrelated identities.
+// WithInsecureSubjectPattern is the explicit escape hatch for the latter.
 package sigstore
 
 import (
@@ -21,8 +23,9 @@ import (
 	"github.com/sigstore/sigstore-go/pkg/verify"
 )
 
-// BundleSuffix is appended to the manifest URL to locate its Sigstore bundle,
-// matching `cosign sign-blob --bundle <manifest>.sigstore.json`.
+// BundleSuffix is the default suffix appended to the manifest's asset name to
+// locate its Sigstore bundle, matching
+// `cosign sign-blob --bundle <manifest>.sigstore.json`. See WithBundleSuffix.
 const BundleSuffix = ".sigstore.json"
 
 // Identity pins who may sign. For GitHub Actions keyless signing, SubjectRegexp
