@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -477,7 +478,8 @@ func TestDownloadToFile(t *testing.T) {
 		if err != nil || !bytes.Equal(got, artifactBody) {
 			t.Fatalf("destination content wrong (err %v)", err)
 		}
-		if fi, _ := os.Stat(dest); fi.Mode().Perm() != 0o755 {
+		// Windows has no Unix permission bits to compare.
+		if fi, _ := os.Stat(dest); runtime.GOOS != "windows" && fi.Mode().Perm() != 0o755 {
 			t.Errorf("mode = %v, want 0755", fi.Mode().Perm())
 		}
 		if entries, _ := os.ReadDir(dir); len(entries) != 1 {
