@@ -53,5 +53,9 @@ check "unknown (empty) diff fails safe" "core=true pgp=true sigstore=true integr
 check "a lookalike directory is core" "core=true pgp=false sigstore=false integration=true" <<'EOF'
 pgpx/file.go
 EOF
+check "a module name deeper in a path is not that module" "core=true pgp=false sigstore=false integration=true" <<'EOF'
+docs/sigstore/notes.md
+xpgp/file.go
+EOF
 
 exit $fail
