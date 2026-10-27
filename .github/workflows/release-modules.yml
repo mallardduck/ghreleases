@@ -88,7 +88,8 @@ jobs:
           TAG: ${{ github.ref_name }}
           PRERELEASE: ${{ steps.tag.outputs.prerelease }}
         run: |
-          gh release create "$TAG" --title "$TAG" --notes-file notes.md $PRERELEASE
+          # Never mark a submodule release as "Latest": that badge belongs to the root module.
+          gh release create "$TAG" --title "$TAG" --notes-file notes.md --latest=false $PRERELEASE
 
       - name: Verify Go module proxy
         env:
