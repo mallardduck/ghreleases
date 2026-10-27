@@ -181,3 +181,36 @@ func TestNewVerifier_RejectsUnpinnedIdentity(t *testing.T) {
 		}
 	}
 }
+
+// The permissive-pattern guard is a safe default, not a wall: a caller who
+// deliberately wants to accept any signer from a trusted issuer can say so.
+// The issuer pin and a valid pattern are still required.
+func TestNewVerifier_InsecureSubjectPatternEscapeHatch(t *testing.T) {
+	root := WithTrustedRoot(fixture(t, "trusted_root.json"))
+	gr := realReleases[0]
+
+	for _, re := range []string{`.*`, `.+`, `github\.com/goreleaser/goreleaser`} {
+		v, err := NewVerifier(Identity{SubjectRegexp: re, Issuer: ghIssuer}, root, WithInsecureSubjectPattern())
+		if err != nil {
+			t.Fatalf("escape hatch did not allow %q: %v", re, err)
+		}
+		if err := v.Verify(context.Background(), gr.read(t, gr.manifest), gr.read(t, gr.bundle)); err != nil {
+			t.Errorf("genuine release rejected under %q: %v", re, err)
+		}
+	}
+
+	// The hatch relaxes the subject-shape check only.
+	if _, err := NewVerifier(Identity{SubjectRegexp: `.*`}, root, WithInsecureSubjectPattern()); err == nil {
+		t.Error("escape hatch must not waive the issuer pin")
+	}
+	if _, err := NewVerifier(Identity{SubjectRegexp: `(`, Issuer: ghIssuer}, root, WithInsecureSubjectPattern()); err == nil {
+		t.Error("escape hatch must not accept an invalid regexp")
+	}
+	v, err := NewVerifier(Identity{SubjectRegexp: `.*`, Issuer: "https://accounts.google.com"}, root, WithInsecureSubjectPattern())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := v.Verify(context.Background(), gr.read(t, gr.manifest), gr.read(t, gr.bundle)); err == nil {
+		t.Error("escape hatch must not waive the issuer check at verification time")
+	}
+}
