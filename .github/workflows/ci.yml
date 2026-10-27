@@ -41,6 +41,25 @@ jobs:
           fail_ci_if_error: false
 
 
+  # pgp, sigstore and integration are separate Go modules, so `go test ./...` at the
+  # root never reaches them.
+  test-modules:
+    name: Test sub-modules
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/rancher/ci-image/go1.26:latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Test pgp, sigstore and integration
+        run: |
+          for m in pgp sigstore integration; do
+            echo "::group::$m"
+            (cd "$m" && go test -v -race ./...) || exit 1
+            echo "::endgroup::"
+          done
+
   test-crossplatform:
     name: Test
     runs-on: ${{ matrix.os }}
@@ -69,7 +88,7 @@ jobs:
 
   build:
     name: Build
-    needs: [lint, test, test-crossplatform]
+    needs: [lint, test, test-modules, test-crossplatform]
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/rancher/ci-image/go1.26:latest
