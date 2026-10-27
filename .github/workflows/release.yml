@@ -30,6 +30,12 @@ jobs:
       - name: Run race detector
         run: go test -race ./...
 
+      # The verifier modules are exercised against this tree by the integration module,
+      # so a root change that breaks them cannot be released.
+      - name: Run integration tests
+        working-directory: integration
+        run: go test -race ./...
+
       - name: Run linter
         run: GOLANGCI_LINT_CACHE=$(mktemp -d) golangci-lint run --timeout=5m
 

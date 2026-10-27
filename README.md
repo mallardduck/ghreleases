@@ -598,3 +598,11 @@ The core module is designed to be stable and dependency-free. Contributions to i
 
 Optional integrations that need third-party libraries (such as the signature verifiers) belong in
 their own module under a subdirectory, so importing the core never pulls them in.
+
+## Releases
+
+The core module is tagged `vX.Y.Z`. Each optional verifier module is versioned and released
+independently, with its directory as the tag prefix: `pgp/vX.Y.Z` and `sigstore/vX.Y.Z`. Pushing one
+of those tags runs the module's tests and the integration tests, then publishes a GitHub release
+whose notes list only that module's user-facing commits. The verifier modules do not import the core
+module, so they can be released without a core release (and vice versa).
