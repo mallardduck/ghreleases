@@ -68,8 +68,12 @@ type ManifestVerifier interface {
 	Verify(ctx context.Context, manifest, signature []byte) error
 }
 
-// WithManifestVerifier will make the FetchChecksums* methods authenticate each
-// checksum manifest before parsing it.
+// WithManifestVerifier makes FetchChecksums, FetchChecksumsLenient and
+// FetchMultiHashChecksums authenticate each checksum manifest before parsing
+// it. The signature is located via v.SignatureName (or WithSignatureURL), and a
+// missing signature fails with ErrSignatureMissing, a rejected one with
+// ErrSignatureInvalid, so enabling a verifier can never silently fall back to
+// unauthenticated checksums. Without this option behavior is unchanged.
 func WithManifestVerifier(v ManifestVerifier) Option {
 	return func(c *Client) { c.manifestVerifier = v }
 }
@@ -77,9 +81,26 @@ func WithManifestVerifier(v ManifestVerifier) Option {
 type signatureURLKey struct{}
 
 // WithSignatureURL returns a context telling the FetchChecksums* methods
-// exactly where the manifest's detached signature lives.
+// exactly where the manifest's detached signature lives. Use it when the
+// manifest URL is a GitHub API asset URL (".../releases/assets/<id>"), where
+// the signature cannot be found by name: look it up in Release.Assets using
+// ManifestVerifier.SignatureName and pass its URL here. Without it the
+// signature is expected next to the manifest, at the same URL with the last
+// path segment replaced by SignatureName.
 func WithSignatureURL(ctx context.Context, url string) context.Context {
 	return context.WithValue(ctx, signatureURLKey{}, url)
+}
+
+// siblingURL replaces the last path segment of rawURL with name.
+func siblingURL(rawURL, name string) string {
+	q := ""
+	if i := strings.IndexAny(rawURL, "?#"); i >= 0 {
+		rawURL, q = rawURL[:i], rawURL[i:]
+	}
+	if i := strings.LastIndex(rawURL, "/"); i >= 0 {
+		rawURL = rawURL[:i+1]
+	}
+	return rawURL + name + q
 }
 
 // Release represents a GitHub release.
@@ -488,7 +509,7 @@ func (r apiRelease) toRelease() *Release {
 
 // FetchChecksums downloads and parses a checksum file strictly (see ParseChecksumFile).
 func (c *Client) FetchChecksums(ctx context.Context, url string) (map[string]string, error) {
-	body, err := c.fetchBody(ctx, url)
+	body, err := c.fetchManifest(ctx, url)
 	if err != nil {
 		return nil, err
 	}
@@ -498,7 +519,7 @@ func (c *Client) FetchChecksums(ctx context.Context, url string) (map[string]str
 // FetchChecksumsLenient downloads and parses a checksum file leniently
 // (see ParseChecksumFileLenient).
 func (c *Client) FetchChecksumsLenient(ctx context.Context, url string) (map[string]string, error) {
-	body, err := c.fetchBody(ctx, url)
+	body, err := c.fetchManifest(ctx, url)
 	if err != nil {
 		return nil, err
 	}
@@ -508,6 +529,10 @@ func (c *Client) FetchChecksumsLenient(ctx context.Context, url string) (map[str
 // FetchMultiHashChecksums downloads a multi-hash checksum file and its sibling
 // hash-order file, then returns the SHA-256 column (see ParseMultiHashChecksumFile).
 func (c *Client) FetchMultiHashChecksums(ctx context.Context, checksumURL, orderURL string) (map[string]string, error) {
+	body, err := c.fetchManifest(ctx, checksumURL)
+	if err != nil {
+		return nil, err
+	}
 	orderBody, err := c.fetchBody(ctx, orderURL)
 	if err != nil {
 		return nil, err
@@ -516,11 +541,40 @@ func (c *Client) FetchMultiHashChecksums(ctx context.Context, checksumURL, order
 	if err != nil {
 		return nil, err
 	}
-	body, err := c.fetchBody(ctx, checksumURL)
+	return ParseMultiHashChecksumFile(bytes.NewReader(body), order)
+}
+
+// fetchManifest fetches a checksum manifest and, when a ManifestVerifier is
+// configured, authenticates it against its detached signature.
+func (c *Client) fetchManifest(ctx context.Context, url string) ([]byte, error) {
+	body, err := c.fetchBody(ctx, url)
 	if err != nil {
 		return nil, err
 	}
-	return ParseMultiHashChecksumFile(bytes.NewReader(body), order)
+	if c.manifestVerifier == nil {
+		return body, nil
+	}
+	sigURL, _ := ctx.Value(signatureURLKey{}).(string)
+	if sigURL == "" {
+		base := url
+		if i := strings.IndexAny(base, "?#"); i >= 0 {
+			base = base[:i]
+		}
+		base = base[strings.LastIndex(base, "/")+1:]
+		sigURL = siblingURL(url, c.manifestVerifier.SignatureName(base))
+	}
+	sig, err := c.fetchBody(ctx, sigURL)
+	if err != nil {
+		var st *HTTPStatusError
+		if errors.As(err, &st) && st.StatusCode == http.StatusNotFound {
+			return nil, &wrapped{sentinel: ErrSignatureMissing, cause: err}
+		}
+		return nil, err
+	}
+	if err := c.manifestVerifier.Verify(ctx, body, sig); err != nil {
+		return nil, &wrapped{sentinel: ErrSignatureInvalid, cause: err}
+	}
+	return body, nil
 }
 
 // fetchBody GETs url and returns the body, applying the default API timeout when

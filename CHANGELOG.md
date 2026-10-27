@@ -10,6 +10,10 @@
 - `CompareVersions(a, b)` compares release tags by semver precedence (main version first, then
   prerelease identifiers per the semver spec).
 - `ReleaseFilter.IncludePrereleases`.
+- `ManifestVerifier` and `WithManifestVerifier`: authenticate checksum manifests against a detached
+  signature before they are parsed (`FetchChecksums`, `FetchChecksumsLenient`, `FetchMultiHashChecksums`).
+  Fails closed with `ErrSignatureMissing` / `ErrSignatureInvalid`. Off by default. `WithSignatureURL(ctx, url)`
+  supplies the exact signature URL, needed for GitHub API asset URLs (opaque IDs).
 
 ### Behaviour changes
 
