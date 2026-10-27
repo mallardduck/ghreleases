@@ -105,6 +105,10 @@ ctx := context.Background()
 // Get latest release tag
 tag, err := client.LatestRelease(ctx, "owner", "repo")
 
+// Or the whole latest release (Prerelease, PublishedAt, Body, Assets) in one
+// request; it honours the same WithTagPrefix / WithPrereleases context filters
+rel, err := client.LatestReleaseInfo(ctx, "owner", "repo")
+
 // Get specific release with assets
 release, err := client.GetRelease(ctx, "owner", "repo", "v1.0.0")
 for _, asset := range release.Assets {
