@@ -208,6 +208,9 @@ func newClient(httpClient *http.Client, token string, opts []Option) *Client {
 // ReleaseFilter to the context with WithTagPrefix so that only releases
 // matching the desired prefix are considered.
 func (c *Client) LatestRelease(ctx context.Context, owner, repo string) (string, error) {
+	if filter, ok := releaseFilterFromContext(ctx); ok && filter.IncludePrereleases {
+		return c.highestRelease(ctx, owner, repo, filter)
+	}
 	if filter, ok := releaseFilterFromContext(ctx); ok && filter.TagPrefix != "" {
 		return c.latestReleaseWithFilter(ctx, owner, repo, filter)
 	}
@@ -250,6 +253,42 @@ func (c *Client) latestReleaseWithFilter(ctx context.Context, owner, repo string
 		}
 	}
 	return "", fmt.Errorf("%w: no release with tag prefix %q in %s/%s", ErrReleaseNotFound, filter.TagPrefix, owner, repo)
+}
+
+// highestRelease scans every page of non-draft releases matching the filter
+// prefix and returns the tag with the highest semver precedence. Prereleases
+// are included. Non-semver tags are ignored.
+func (c *Client) highestRelease(ctx context.Context, owner, repo string, filter ReleaseFilter) (string, error) {
+	best := ""
+	for page := 1; ; page++ {
+		url := fmt.Sprintf("%s/repos/%s/%s/releases?page=%d&per_page=100", c.baseURL, owner, repo, page)
+		var raw []apiRelease
+		if err := c.doGet(ctx, url, &raw); err != nil {
+			return "", wrapFetchErr(err)
+		}
+		if len(raw) == 0 {
+			break
+		}
+		for _, r := range raw {
+			if r.Draft || !strings.HasPrefix(r.TagName, filter.TagPrefix) {
+				continue
+			}
+			if _, ok := parseVersion(r.TagName); !ok {
+				continue
+			}
+			if best == "" {
+				best = r.TagName
+				continue
+			}
+			if cmp, _ := CompareVersions(r.TagName, best); cmp > 0 {
+				best = r.TagName
+			}
+		}
+	}
+	if best == "" {
+		return "", fmt.Errorf("%w: no semver release in %s/%s", ErrReleaseNotFound, owner, repo)
+	}
+	return best, nil
 }
 
 // GetRelease fetches a specific release by tag.
