@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"strings"
 
 	"github.com/sigstore/sigstore-go/pkg/bundle"
 	"github.com/sigstore/sigstore-go/pkg/root"
@@ -56,7 +57,7 @@ func WithBundleSuffix(suffix string) Option {
 // an arbitrary identity proves nothing about authenticity, so only use it when
 // you deliberately want that.
 func WithInsecureSubjectPattern() Option {
-	return func(v *Verifier) {} // stub: not implemented yet
+	return func(v *Verifier) { v.insecureSubject = true }
 }
 
 // Verifier authenticates a manifest against a Sigstore bundle and a pinned
@@ -65,6 +66,7 @@ type Verifier struct {
 	id              Identity
 	trustedRootJSON []byte
 	bundleSuffix    string
+	insecureSubject bool
 }
 
 // NewVerifier validates the pinned identity and returns a Verifier.
@@ -72,18 +74,60 @@ func NewVerifier(id Identity, opts ...Option) (*Verifier, error) {
 	if id.SubjectRegexp == "" || id.Issuer == "" {
 		return nil, errors.New("sigstore: Identity must pin both SubjectRegexp and Issuer")
 	}
-	if _, err := regexp.Compile(id.SubjectRegexp); err != nil {
+	re, err := regexp.Compile(id.SubjectRegexp)
+	if err != nil {
 		return nil, fmt.Errorf("sigstore: invalid SubjectRegexp: %w", err)
 	}
 	v := &Verifier{id: id, bundleSuffix: BundleSuffix}
 	for _, opt := range opts {
 		opt(v)
 	}
+	if !v.insecureSubject {
+		if err := checkSubjectPattern(id.SubjectRegexp, re); err != nil {
+			return nil, err
+		}
+	}
 	if v.bundleSuffix == "" {
 		// An empty suffix would point the bundle lookup at the manifest itself.
 		return nil, errors.New("sigstore: bundle suffix must not be empty")
 	}
 	return v, nil
+}
+
+// permissiveProbes are subjects no legitimate pin matches: the empty string and
+// identities from an unrelated host. A pattern that matches any of them accepts
+// signers it was never meant to.
+var permissiveProbes = []string{
+	"",
+	"a",
+	"https://example.invalid/evil/.github/workflows/x.yml@refs/heads/main",
+}
+
+// checkSubjectPattern rejects SubjectRegexp values that would accept signers
+// other than the intended workflow: patterns not anchored at both ends, and
+// patterns that match unrelated identities. WithInsecureSubjectPattern opts out.
+func checkSubjectPattern(pattern string, re *regexp.Regexp) error {
+	if !strings.HasPrefix(pattern, "^") || !endsWithAnchor(pattern) {
+		return fmt.Errorf("sigstore: SubjectRegexp %q must be anchored with ^ and $ (or use WithInsecureSubjectPattern)", pattern)
+	}
+	for _, probe := range permissiveProbes {
+		if re.MatchString(probe) {
+			return fmt.Errorf("sigstore: SubjectRegexp %q matches unrelated identities such as %q (or use WithInsecureSubjectPattern)", pattern, probe)
+		}
+	}
+	return nil
+}
+
+// endsWithAnchor reports whether pattern ends in an unescaped "$".
+func endsWithAnchor(pattern string) bool {
+	if !strings.HasSuffix(pattern, "$") {
+		return false
+	}
+	slashes := 0
+	for i := len(pattern) - 2; i >= 0 && pattern[i] == '\\'; i-- {
+		slashes++
+	}
+	return slashes%2 == 0
 }
 
 // SignatureName implements ghrelease.ManifestVerifier.
