@@ -532,8 +532,9 @@ if errors.Is(err, ghrelease.ErrReleaseNotFound) && errors.As(err, &se) {
 - `ErrUnsupportedFormat` - Unsupported archive format
 - `ErrChecksumFormat` - Malformed multi-hash checksum file
 - `ErrHostNotAllowed` - Request or redirect blocked by `WithAllowedHosts`
-- `ErrSignatureMissing` - A `ManifestVerifier` is configured but the manifest's signature was not found
-- `ErrSignatureInvalid` - A `ManifestVerifier` rejected the manifest's signature
+- `ErrSignatureMissing` - A verifier is configured but the signature was not found
+- `ErrSignatureInvalid` - A verifier rejected the signature
+- `ErrInvalidVerifier` - A nil verifier was configured; verification fails closed instead of being skipped
 
 ## Testing
 

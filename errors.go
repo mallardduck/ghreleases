@@ -21,8 +21,8 @@ var (
 	ErrUnsupportedFormat = errors.New("unsupported archive format")
 	ErrChecksumFormat    = errors.New("invalid checksum file format")
 	ErrHostNotAllowed    = errors.New("host not allowed")
-	ErrSignatureMissing  = errors.New("checksum manifest signature not found")
-	ErrSignatureInvalid  = errors.New("checksum manifest signature verification failed")
+	ErrSignatureMissing  = errors.New("signature not found")
+	ErrSignatureInvalid  = errors.New("signature verification failed")
 	ErrInvalidVerifier   = errors.New("verifier is nil")
 )
 
