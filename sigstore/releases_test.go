@@ -214,3 +214,12 @@ func TestNewVerifier_InsecureSubjectPatternEscapeHatch(t *testing.T) {
 		t.Error("escape hatch must not waive the issuer check at verification time")
 	}
 }
+
+// An empty suffix would make the bundle URL equal the manifest URL.
+func TestNewVerifier_RejectsEmptyBundleSuffix(t *testing.T) {
+	_, err := NewVerifier(Identity{SubjectRegexp: testSAN, Issuer: testIssuer},
+		WithTrustedRoot(fixture(t, "trusted_root.json")), WithBundleSuffix(""))
+	if err == nil {
+		t.Fatal("empty bundle suffix accepted")
+	}
+}
