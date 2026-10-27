@@ -43,7 +43,10 @@ jobs:
             PREV_TAG=$(git rev-list --max-parents=0 HEAD)
           fi
           echo "Generating changelog from ${PREV_TAG} to ${CURRENT_TAG}"
-          COMMITS=$(git log ${PREV_TAG}..${CURRENT_TAG} --oneline --no-merges)
+          # Release notes list user-facing changes only: chore/test/style/refactor/ci
+          # commits (including red-green stubs and failing tests) are left out.
+          COMMITS=$(git log ${PREV_TAG}..${CURRENT_TAG} --oneline --no-merges --extended-regexp \
+            --grep='^(feat|fix|perf|docs)(\([^)]+\))?!?:' --grep='^BREAKING CHANGE:')
           if [ -z "$COMMITS" ]; then
             CHANGELOG="No changes in this release."
           else
