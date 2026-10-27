@@ -45,6 +45,12 @@ func WithTrustedRoot(trustedRootJSON []byte) Option {
 	return func(v *Verifier) { v.trustedRootJSON = trustedRootJSON }
 }
 
+// WithBundleSuffix overrides BundleSuffix for releases that name their bundle
+// differently (for example "<manifest>.bundle").
+func WithBundleSuffix(suffix string) Option {
+	return func(v *Verifier) {} // stub: not implemented yet
+}
+
 // Verifier authenticates a manifest against a Sigstore bundle and a pinned
 // signer Identity. It implements ghrelease.ManifestVerifier.
 type Verifier struct {
