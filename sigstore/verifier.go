@@ -16,7 +16,7 @@ import (
 	"fmt"
 	"io"
 	"regexp"
-	"strings"
+	"regexp/syntax"
 
 	"github.com/sigstore/sigstore-go/pkg/bundle"
 	"github.com/sigstore/sigstore-go/pkg/root"
@@ -110,8 +110,8 @@ var permissiveProbes = []string{
 // other than the intended workflow: patterns not anchored at both ends, and
 // patterns that match unrelated identities. WithInsecureSubjectPattern opts out.
 func checkSubjectPattern(pattern string, re *regexp.Regexp) error {
-	if !strings.HasPrefix(pattern, "^") || !endsWithAnchor(pattern) {
-		return fmt.Errorf("sigstore: SubjectRegexp %q must be anchored with ^ and $ (or use WithInsecureSubjectPattern)", pattern)
+	if !anchoredAtBothEnds(pattern) {
+		return fmt.Errorf("sigstore: SubjectRegexp %q must be anchored with ^ and $ around the whole pattern, e.g. ^(?:a|b)$ for alternatives (or use WithInsecureSubjectPattern)", pattern)
 	}
 	for _, probe := range permissiveProbes {
 		if re.MatchString(probe) {
@@ -121,16 +121,16 @@ func checkSubjectPattern(pattern string, re *regexp.Regexp) error {
 	return nil
 }
 
-// endsWithAnchor reports whether pattern ends in an unescaped "$".
-func endsWithAnchor(pattern string) bool {
-	if !strings.HasSuffix(pattern, "$") {
+// anchoredAtBothEnds reports whether every match of pattern must span the whole
+// subject: the parsed pattern is a sequence that begins with ^ and ends with $.
+// Reading the parse tree, not the text, rejects a top-level alternation such as
+// "^a|b$" (whose branches are each anchored at only one end) and an escaped "\$".
+func anchoredAtBothEnds(pattern string) bool {
+	re, err := syntax.Parse(pattern, syntax.Perl)
+	if err != nil || re.Op != syntax.OpConcat || len(re.Sub) < 2 {
 		return false
 	}
-	slashes := 0
-	for i := len(pattern) - 2; i >= 0 && pattern[i] == '\\'; i-- {
-		slashes++
-	}
-	return slashes%2 == 0
+	return re.Sub[0].Op == syntax.OpBeginText && re.Sub[len(re.Sub)-1].Op == syntax.OpEndText
 }
 
 // SignatureName implements ghrelease.SignatureVerifier.

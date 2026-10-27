@@ -177,6 +177,8 @@ func TestNewVerifier_RejectsUnpinnedIdentity(t *testing.T) {
 		`github\.com/goreleaser/goreleaser`, // unanchored: also matches evil.example/github.com/goreleaser/goreleaser
 		`^https://github\.com/goreleaser/goreleaser`,   // anchored at the start only: matches ".../goreleaser-evil/..."
 		`^https://github\.com/goreleaser/goreleaser\$`, // escaped dollar is a literal, not an end anchor
+		`^https://github\.com/o/r/x|evil$`,             // top-level alternation: the branches are each anchored at one end only
+		`^https://github\.com/o/r/x$|^evil`,            // likewise, in the other direction
 	} {
 		if _, err := NewVerifier(Identity{SubjectRegexp: re, Issuer: ghIssuer}, root); err == nil {
 			t.Errorf("NewVerifier accepted permissive SubjectRegexp %q", re)
@@ -187,6 +189,15 @@ func TestNewVerifier_RejectsUnpinnedIdentity(t *testing.T) {
 // The permissive-pattern guard is a safe default, not a wall: a caller who
 // deliberately wants to accept any signer from a trusted issuer can say so.
 // The issuer pin and a valid pattern are still required.
+// Anchors around a grouped alternation pin every branch, so they stay allowed.
+func TestNewVerifier_AcceptsGroupedAlternation(t *testing.T) {
+	root := WithTrustedRoot(fixture(t, "trusted_root.json"))
+	re := `^https://github\.com/o/r/\.github/workflows/(?:a|b)\.yml@refs/tags/v.+$`
+	if _, err := NewVerifier(Identity{SubjectRegexp: re, Issuer: ghIssuer}, root); err != nil {
+		t.Errorf("NewVerifier rejected a fully anchored pattern: %v", err)
+	}
+}
+
 func TestNewVerifier_InsecureSubjectPatternEscapeHatch(t *testing.T) {
 	root := WithTrustedRoot(fixture(t, "trusted_root.json"))
 	gr := realReleases[0]
