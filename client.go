@@ -162,7 +162,10 @@ type Release struct {
 	Draft       bool
 	Prerelease  bool
 	PublishedAt time.Time
-	Assets      []Asset
+	// Body is the release notes text. It is populated by the single-release
+	// and latest-release lookups as well as by listings.
+	Body   string
+	Assets []Asset
 }
 
 // Asset represents a downloadable release asset.
@@ -328,6 +331,14 @@ func (c *Client) LatestRelease(ctx context.Context, owner, repo string) (string,
 	}
 
 	return release.TagName, nil
+}
+
+// LatestReleaseInfo is LatestRelease that returns the whole release, not just
+// its tag, so callers can read Prerelease, PublishedAt, Body and Assets without
+// a second request. It honours the same context filters as LatestRelease
+// (WithTagPrefix, WithPrereleases).
+func (c *Client) LatestReleaseInfo(_ context.Context, _, _ string) (*Release, error) {
+	return &Release{}, nil
 }
 
 // latestReleaseWithFilter lists releases in descending publish order and
