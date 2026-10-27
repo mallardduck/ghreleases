@@ -29,8 +29,8 @@ func ExampleWithManifestVerifier() {
 		fmt.Println(err)
 	}
 	// Output:
-	// checksum manifest signature not found
-	// checksum manifest signature verification failed
+	// signature not found
+	// signature verification failed
 }
 
 // GitHub API asset URLs end in an opaque ID, so the signature cannot be found by
