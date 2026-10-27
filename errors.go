@@ -23,6 +23,7 @@ var (
 	ErrHostNotAllowed    = errors.New("host not allowed")
 	ErrSignatureMissing  = errors.New("checksum manifest signature not found")
 	ErrSignatureInvalid  = errors.New("checksum manifest signature verification failed")
+	ErrInvalidVerifier   = errors.New("verifier is nil")
 )
 
 // HTTPStatusError is returned when a request completes with an unexpected HTTP
