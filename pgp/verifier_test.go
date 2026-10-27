@@ -47,7 +47,7 @@ func TestVerifier_GenuineHelmFiles(t *testing.T) {
 	v := helmVerifier(t)
 	for _, name := range []string{linuxSum, linuxHash, darwinSum} {
 		t.Run(name, func(t *testing.T) {
-			if err := v.Verify(context.Background(), fixture(t, name), fixture(t, name+".asc")); err != nil {
+			if err := v.Verify(context.Background(), bytes.NewReader(fixture(t, name)), fixture(t, name+".asc")); err != nil {
 				t.Fatalf("genuine file rejected: %v", err)
 			}
 		})
@@ -56,12 +56,12 @@ func TestVerifier_GenuineHelmFiles(t *testing.T) {
 
 func TestVerifier_GenuineWithFingerprintPin(t *testing.T) {
 	v := helmVerifier(t, WithFingerprints(helmSigner))
-	if err := v.Verify(context.Background(), fixture(t, linuxSum), fixture(t, linuxSum+".asc")); err != nil {
+	if err := v.Verify(context.Background(), bytes.NewReader(fixture(t, linuxSum)), fixture(t, linuxSum+".asc")); err != nil {
 		t.Fatalf("genuine file rejected under its signer's pin: %v", err)
 	}
 	// Fingerprints are case- and space-insensitive, as printed by gpg.
 	v = helmVerifier(t, WithFingerprints(strings.ToLower("208D D36E D5BB 3745 A167  43A4 C7C6 FBB5 B91C 1155")))
-	if err := v.Verify(context.Background(), fixture(t, linuxSum), fixture(t, linuxSum+".asc")); err != nil {
+	if err := v.Verify(context.Background(), bytes.NewReader(fixture(t, linuxSum)), fixture(t, linuxSum+".asc")); err != nil {
 		t.Fatalf("gpg-formatted fingerprint pin rejected: %v", err)
 	}
 }
@@ -89,7 +89,7 @@ func TestVerifier_RejectsBadInput(t *testing.T) {
 	v := helmVerifier(t)
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if err := v.Verify(context.Background(), tt.manifest, tt.sig); err == nil {
+			if err := v.Verify(context.Background(), bytes.NewReader(tt.manifest), tt.sig); err == nil {
 				t.Fatal("Verify() = nil, want rejection")
 			}
 		})
@@ -105,7 +105,7 @@ func TestVerifier_AcceptsBinarySignature(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := helmVerifier(t).Verify(context.Background(), fixture(t, linuxSum), bin); err != nil {
+	if err := helmVerifier(t).Verify(context.Background(), bytes.NewReader(fixture(t, linuxSum)), bin); err != nil {
 		t.Fatalf("binary detached signature rejected: %v", err)
 	}
 }
@@ -163,13 +163,13 @@ func TestVerifier_SignerNotTrusted(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := v.Verify(context.Background(), good, sig); err == nil {
+		if err := v.Verify(context.Background(), bytes.NewReader(good), sig); err == nil {
 			t.Fatal("signature by a key outside the keyring was accepted")
 		}
 	})
 	t.Run("fingerprint pin names a different key", func(t *testing.T) {
 		v := helmVerifier(t, WithFingerprints(helmOther))
-		if err := v.Verify(context.Background(), good, sig); err == nil {
+		if err := v.Verify(context.Background(), bytes.NewReader(good), sig); err == nil {
 			t.Fatal("signature accepted though the pin excludes its signer")
 		}
 	})

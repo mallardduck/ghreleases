@@ -1,6 +1,7 @@
 package sigstore
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"testing"
@@ -51,7 +52,7 @@ func TestVerifier_Verify(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			v := newTestVerifier(t, tt.id)
-			err := v.Verify(context.Background(), tt.manifest, tt.bundle)
+			err := v.Verify(context.Background(), bytes.NewReader(tt.manifest), tt.bundle)
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("Verify() error = %v, wantErr %v", err, tt.wantErr)
 			}

@@ -1,6 +1,6 @@
 // Package pgp verifies checksum manifests signed with detached OpenPGP
 // signatures (for example Helm's "<file>.sha256sum.asc"). It implements
-// ghrelease.ManifestVerifier and lives in its own module so the core
+// ghrelease.SignatureVerifier and lives in its own module so the core
 // ghreleases package stays dependency-free.
 //
 // Trust is explicit: NewVerifier requires a keyring and refuses to start
@@ -14,6 +14,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/ProtonMail/go-crypto/openpgp"
@@ -51,7 +52,7 @@ func WithSignatureSuffix(suffix string) Option {
 }
 
 // Verifier authenticates a manifest against a detached OpenPGP signature made
-// by a key in its keyring. It implements ghrelease.ManifestVerifier.
+// by a key in its keyring. It implements ghrelease.SignatureVerifier.
 type Verifier struct {
 	keyring openpgp.EntityList
 	suffix  string
@@ -158,21 +159,22 @@ func pinEntities(entities openpgp.EntityList, pins []string) (openpgp.EntityList
 	return out, nil
 }
 
-// SignatureName implements ghrelease.ManifestVerifier.
+// SignatureName implements ghrelease.SignatureVerifier.
 func (v *Verifier) SignatureName(manifestName string) string { return manifestName + v.suffix }
 
-// Verify implements ghrelease.ManifestVerifier. It accepts an armored or binary
-// detached signature and requires it to be a valid signature over exactly these
-// manifest bytes by a key in the (optionally pinned) keyring.
-func (v *Verifier) Verify(_ context.Context, manifest, signature []byte) error {
+// Verify implements ghrelease.SignatureVerifier. It accepts an armored or binary
+// detached signature and requires it to be a valid signature over exactly the
+// bytes of content, read to EOF, by a key in the (optionally pinned) keyring.
+// The same verifier authenticates a checksum manifest or a downloaded asset.
+func (v *Verifier) Verify(_ context.Context, content io.Reader, signature []byte) error {
 	if len(bytes.TrimSpace(signature)) == 0 {
 		return errors.New("pgp: empty signature")
 	}
 	var err error
 	if bytes.HasPrefix(bytes.TrimSpace(signature), []byte(armoredSigHeader)) {
-		_, err = openpgp.CheckArmoredDetachedSignature(v.keyring, bytes.NewReader(manifest), bytes.NewReader(signature), nil)
+		_, err = openpgp.CheckArmoredDetachedSignature(v.keyring, content, bytes.NewReader(signature), nil)
 	} else {
-		_, err = openpgp.CheckDetachedSignature(v.keyring, bytes.NewReader(manifest), bytes.NewReader(signature), nil)
+		_, err = openpgp.CheckDetachedSignature(v.keyring, content, bytes.NewReader(signature), nil)
 	}
 	if err != nil {
 		return fmt.Errorf("pgp: verify: %w", err)

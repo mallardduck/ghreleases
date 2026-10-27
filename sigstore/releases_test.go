@@ -1,6 +1,7 @@
 package sigstore
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"path/filepath"
@@ -79,7 +80,7 @@ func TestVerifier_RealReleases(t *testing.T) {
 			if got := v.SignatureName(r.manifest); got != r.bundle {
 				t.Fatalf("SignatureName(%q) = %q, want the release's asset name %q", r.manifest, got, r.bundle)
 			}
-			if err := v.Verify(context.Background(), r.read(t, r.manifest), r.read(t, r.bundle)); err != nil {
+			if err := v.Verify(context.Background(), bytes.NewReader(r.read(t, r.manifest)), r.read(t, r.bundle)); err != nil {
 				t.Fatalf("genuine release rejected: %v", err)
 			}
 		})
@@ -95,10 +96,10 @@ func TestVerifier_RealReleases_Tampered(t *testing.T) {
 
 			// An attacker who swaps a binary also rewrites its checksum line.
 			swapped := append([]byte("0000000000000000000000000000000000000000000000000000000000000000  evil.tar.gz\n"), manifest...)
-			if err := v.Verify(context.Background(), swapped, bundle); err == nil {
+			if err := v.Verify(context.Background(), bytes.NewReader(swapped), bundle); err == nil {
 				t.Error("manifest with an injected line was accepted")
 			}
-			if err := v.Verify(context.Background(), manifest[:len(manifest)-1], bundle); err == nil {
+			if err := v.Verify(context.Background(), bytes.NewReader(manifest[:len(manifest)-1]), bundle); err == nil {
 				t.Error("truncated manifest was accepted")
 			}
 		})
@@ -117,10 +118,10 @@ func TestVerifier_RealReleases_CrossRelease(t *testing.T) {
 			t.Run(signer.name+" pin vs "+other.name+" files", func(t *testing.T) {
 				v := signer.verifier(t)
 				ctx := context.Background()
-				if err := v.Verify(ctx, other.read(t, other.manifest), other.read(t, other.bundle)); err == nil {
+				if err := v.Verify(ctx, bytes.NewReader(other.read(t, other.manifest)), other.read(t, other.bundle)); err == nil {
 					t.Error("another project's genuine release was accepted under this identity pin")
 				}
-				if err := v.Verify(ctx, other.read(t, other.manifest), signer.read(t, signer.bundle)); err == nil {
+				if err := v.Verify(ctx, bytes.NewReader(other.read(t, other.manifest)), signer.read(t, signer.bundle)); err == nil {
 					t.Error("bundle replayed against a different project's manifest was accepted")
 				}
 			})
@@ -139,7 +140,7 @@ func TestVerifier_TagPinRejectsBranchSignedRelease(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := v.Verify(context.Background(), syft.read(t, syft.manifest), syft.read(t, syft.bundle)); err == nil {
+	if err := v.Verify(context.Background(), bytes.NewReader(syft.read(t, syft.manifest)), syft.read(t, syft.bundle)); err == nil {
 		t.Fatal("branch-signed release accepted under a refs/tags pin")
 	}
 }
@@ -155,7 +156,7 @@ func TestVerifier_NonDefaultBundleSuffix_YQ(t *testing.T) {
 	if got := v.SignatureName(yq.manifest); got != yq.bundle {
 		t.Fatalf("SignatureName(%q) = %q, want %q", yq.manifest, got, yq.bundle)
 	}
-	if err := v.Verify(context.Background(), yq.read(t, yq.manifest), yq.read(t, yq.bundle)); err != nil {
+	if err := v.Verify(context.Background(), bytes.NewReader(yq.read(t, yq.manifest)), yq.read(t, yq.bundle)); err != nil {
 		t.Fatalf("genuine yq release rejected: %v", err)
 	}
 
@@ -195,7 +196,7 @@ func TestNewVerifier_InsecureSubjectPatternEscapeHatch(t *testing.T) {
 		if err != nil {
 			t.Fatalf("escape hatch did not allow %q: %v", re, err)
 		}
-		if err := v.Verify(context.Background(), gr.read(t, gr.manifest), gr.read(t, gr.bundle)); err != nil {
+		if err := v.Verify(context.Background(), bytes.NewReader(gr.read(t, gr.manifest)), gr.read(t, gr.bundle)); err != nil {
 			t.Errorf("genuine release rejected under %q: %v", re, err)
 		}
 	}
@@ -211,7 +212,7 @@ func TestNewVerifier_InsecureSubjectPatternEscapeHatch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := v.Verify(context.Background(), gr.read(t, gr.manifest), gr.read(t, gr.bundle)); err == nil {
+	if err := v.Verify(context.Background(), bytes.NewReader(gr.read(t, gr.manifest)), gr.read(t, gr.bundle)); err == nil {
 		t.Error("escape hatch must not waive the issuer check at verification time")
 	}
 }

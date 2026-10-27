@@ -1,6 +1,6 @@
 // Package sigstore verifies checksum manifests signed keylessly with Sigstore
 // (for example by `cosign sign-blob` in a GitHub Actions workflow). It
-// implements ghrelease.ManifestVerifier and lives in its own module so the
+// implements ghrelease.SignatureVerifier and lives in its own module so the
 // core ghreleases package stays dependency-free.
 //
 // The signer's identity must be pinned: a valid Sigstore signature from an
@@ -11,10 +11,10 @@
 package sigstore
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"regexp"
 	"strings"
 
@@ -64,7 +64,7 @@ func WithInsecureSubjectPattern() Option {
 }
 
 // Verifier authenticates a manifest against a Sigstore bundle and a pinned
-// signer Identity. It implements ghrelease.ManifestVerifier.
+// signer Identity. It implements ghrelease.SignatureVerifier.
 type Verifier struct {
 	id              Identity
 	trustedRootJSON []byte
@@ -133,7 +133,7 @@ func endsWithAnchor(pattern string) bool {
 	return slashes%2 == 0
 }
 
-// SignatureName implements ghrelease.ManifestVerifier.
+// SignatureName implements ghrelease.SignatureVerifier.
 func (v *Verifier) SignatureName(manifestName string) string {
 	return manifestName + v.bundleSuffix
 }
@@ -145,11 +145,12 @@ func (v *Verifier) trustedRoot() (root.TrustedMaterial, error) {
 	return root.FetchTrustedRoot()
 }
 
-// Verify implements ghrelease.ManifestVerifier. It checks the bundle's
-// signature over manifest, the Fulcio certificate chain, the transparency log
-// entry and signed certificate timestamp, and that the certificate identity
-// matches the pinned Identity.
-func (v *Verifier) Verify(_ context.Context, manifest, bundleJSON []byte) error {
+// Verify implements ghrelease.SignatureVerifier. It checks the bundle's
+// signature over content (read to EOF), the Fulcio certificate chain, the
+// transparency log entry and signed certificate timestamp, and that the
+// certificate identity matches the pinned Identity. The same verifier
+// authenticates a checksum manifest or a downloaded asset.
+func (v *Verifier) Verify(_ context.Context, content io.Reader, bundleJSON []byte) error {
 	if len(bundleJSON) == 0 {
 		return errors.New("sigstore: empty bundle")
 	}
@@ -173,7 +174,7 @@ func (v *Verifier) Verify(_ context.Context, manifest, bundleJSON []byte) error 
 	if err != nil {
 		return fmt.Errorf("sigstore: certificate identity: %w", err)
 	}
-	policy := verify.NewPolicy(verify.WithArtifact(bytes.NewReader(manifest)), verify.WithCertificateIdentity(certID))
+	policy := verify.NewPolicy(verify.WithArtifact(content), verify.WithCertificateIdentity(certID))
 	if _, err := sv.Verify(&b, policy); err != nil {
 		return fmt.Errorf("sigstore: verify: %w", err)
 	}
