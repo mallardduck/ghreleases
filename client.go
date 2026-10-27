@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -27,6 +28,9 @@ type Client struct {
 	allowedHosts []string
 
 	manifestVerifier ManifestVerifier
+	// manifestVerifierErr is set when WithManifestVerifier was given a nil
+	// verifier; every manifest fetch then fails closed.
+	manifestVerifierErr error
 }
 
 // Option configures a Client. Pass options to NewClient or NewClientWithHTTP.
@@ -75,7 +79,26 @@ type ManifestVerifier interface {
 // ErrSignatureInvalid, so enabling a verifier can never silently fall back to
 // unauthenticated checksums. Without this option behavior is unchanged.
 func WithManifestVerifier(v ManifestVerifier) Option {
-	return func(c *Client) { c.manifestVerifier = v }
+	return func(c *Client) {
+		c.manifestVerifier, c.manifestVerifierErr = v, nil
+		if isNilInterface(v) {
+			c.manifestVerifierErr = &wrapped{sentinel: ErrInvalidVerifier, cause: errors.New("WithManifestVerifier was given a nil verifier")}
+		}
+	}
+}
+
+// isNilInterface reports whether v is nil or an interface holding a nil
+// pointer, map, slice, func or chan - for example the result of ignoring the
+// error from a verifier constructor.
+func isNilInterface(v any) bool {
+	if v == nil {
+		return true
+	}
+	switch rv := reflect.ValueOf(v); rv.Kind() {
+	case reflect.Ptr, reflect.Map, reflect.Slice, reflect.Func, reflect.Chan, reflect.Interface:
+		return rv.IsNil()
+	}
+	return false
 }
 
 type signatureURLKey struct{}
@@ -547,6 +570,9 @@ func (c *Client) FetchMultiHashChecksums(ctx context.Context, checksumURL, order
 // fetchManifest fetches a checksum manifest and, when a ManifestVerifier is
 // configured, authenticates it against its detached signature.
 func (c *Client) fetchManifest(ctx context.Context, url string) ([]byte, error) {
+	if c.manifestVerifierErr != nil {
+		return nil, c.manifestVerifierErr
+	}
 	body, err := c.fetchBody(ctx, url)
 	if err != nil {
 		return nil, err
