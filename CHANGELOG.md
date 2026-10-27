@@ -14,6 +14,7 @@
   signature before they are parsed (`FetchChecksums`, `FetchChecksumsLenient`, `FetchMultiHashChecksums`).
   Fails closed with `ErrSignatureMissing` / `ErrSignatureInvalid`. Off by default. `WithSignatureURL(ctx, url)`
   supplies the exact signature URL, needed for GitHub API asset URLs (opaque IDs).
+- `sigstore` module: keyless Sigstore bundle verifier with a pinned certificate identity.
 
 ### Behaviour changes
 
