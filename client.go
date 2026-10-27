@@ -162,7 +162,10 @@ type Release struct {
 	Draft       bool
 	Prerelease  bool
 	PublishedAt time.Time
-	Assets      []Asset
+	// Body is the release notes text. It is populated by the single-release
+	// and latest-release lookups as well as by listings.
+	Body   string
+	Assets []Asset
 }
 
 // Asset represents a downloadable release asset.
@@ -310,36 +313,46 @@ func newClient(httpClient *http.Client, token string, opts []Option) *Client {
 // ReleaseFilter to the context with WithTagPrefix so that only releases
 // matching the desired prefix are considered.
 func (c *Client) LatestRelease(ctx context.Context, owner, repo string) (string, error) {
-	if filter, ok := releaseFilterFromContext(ctx); ok && filter.IncludePrereleases {
+	rel, err := c.LatestReleaseInfo(ctx, owner, repo)
+	if err != nil {
+		return "", err
+	}
+	return rel.TagName, nil
+}
+
+// LatestReleaseInfo is LatestRelease that returns the whole release, not just
+// its tag, so callers can read Prerelease, PublishedAt, Body and Assets without
+// a second request. It honours the same context filters as LatestRelease
+// (WithTagPrefix, WithPrereleases).
+func (c *Client) LatestReleaseInfo(ctx context.Context, owner, repo string) (*Release, error) {
+	filter, _ := releaseFilterFromContext(ctx)
+	if filter.IncludePrereleases {
 		return c.highestRelease(ctx, owner, repo, filter)
 	}
-	if filter, ok := releaseFilterFromContext(ctx); ok && filter.TagPrefix != "" {
+	if filter.TagPrefix != "" {
 		return c.latestReleaseWithFilter(ctx, owner, repo, filter)
 	}
 
 	url := fmt.Sprintf("%s/repos/%s/%s/releases/latest", c.baseURL, owner, repo)
 
-	var release struct {
-		TagName string `json:"tag_name"`
+	var raw apiRelease
+	if err := c.doGet(ctx, url, &raw); err != nil {
+		return nil, wrapFetchErr(err)
 	}
 
-	if err := c.doGet(ctx, url, &release); err != nil {
-		return "", wrapFetchErr(err)
-	}
-
-	return release.TagName, nil
+	return raw.toRelease(), nil
 }
 
 // latestReleaseWithFilter lists releases in descending publish order and
 // returns the first non-draft, non-prerelease one whose tag starts with
 // filter.TagPrefix. It paginates until a match is found or an empty page
 // signals exhaustion.
-func (c *Client) latestReleaseWithFilter(ctx context.Context, owner, repo string, filter ReleaseFilter) (string, error) {
+func (c *Client) latestReleaseWithFilter(ctx context.Context, owner, repo string, filter ReleaseFilter) (*Release, error) {
 	for page := 1; ; page++ {
 		url := fmt.Sprintf("%s/repos/%s/%s/releases?page=%d&per_page=100", c.baseURL, owner, repo, page)
 		var raw []apiRelease
 		if err := c.doGet(ctx, url, &raw); err != nil {
-			return "", wrapFetchErr(err)
+			return nil, wrapFetchErr(err)
 		}
 		if len(raw) == 0 {
 			break
@@ -350,23 +363,23 @@ func (c *Client) latestReleaseWithFilter(ctx context.Context, owner, repo string
 				continue
 			}
 			if strings.HasPrefix(rel.TagName, filter.TagPrefix) {
-				return rel.TagName, nil
+				return rel, nil
 			}
 		}
 	}
-	return "", fmt.Errorf("%w: no release with tag prefix %q in %s/%s", ErrReleaseNotFound, filter.TagPrefix, owner, repo)
+	return nil, fmt.Errorf("%w: no release with tag prefix %q in %s/%s", ErrReleaseNotFound, filter.TagPrefix, owner, repo)
 }
 
 // highestRelease scans every page of non-draft releases matching the filter
 // prefix and returns the tag with the highest semver precedence. Prereleases
 // are included. Non-semver tags are ignored.
-func (c *Client) highestRelease(ctx context.Context, owner, repo string, filter ReleaseFilter) (string, error) {
-	best := ""
+func (c *Client) highestRelease(ctx context.Context, owner, repo string, filter ReleaseFilter) (*Release, error) {
+	var best *Release
 	for page := 1; ; page++ {
 		url := fmt.Sprintf("%s/repos/%s/%s/releases?page=%d&per_page=100", c.baseURL, owner, repo, page)
 		var raw []apiRelease
 		if err := c.doGet(ctx, url, &raw); err != nil {
-			return "", wrapFetchErr(err)
+			return nil, wrapFetchErr(err)
 		}
 		if len(raw) == 0 {
 			break
@@ -378,17 +391,17 @@ func (c *Client) highestRelease(ctx context.Context, owner, repo string, filter 
 			if _, ok := parseVersion(r.TagName); !ok {
 				continue
 			}
-			if best == "" {
-				best = r.TagName
+			if best == nil {
+				best = r.toRelease()
 				continue
 			}
-			if cmp, _ := CompareVersions(r.TagName, best); cmp > 0 {
-				best = r.TagName
+			if cmp, _ := CompareVersions(r.TagName, best.TagName); cmp > 0 {
+				best = r.toRelease()
 			}
 		}
 	}
-	if best == "" {
-		return "", fmt.Errorf("%w: no semver release in %s/%s", ErrReleaseNotFound, owner, repo)
+	if best == nil {
+		return nil, fmt.Errorf("%w: no semver release in %s/%s", ErrReleaseNotFound, owner, repo)
 	}
 	return best, nil
 }
@@ -531,6 +544,7 @@ type apiRelease struct {
 	ID          int64  `json:"id"`
 	TagName     string `json:"tag_name"`
 	Name        string `json:"name"`
+	Body        string `json:"body"`
 	Draft       bool   `json:"draft"`
 	Prerelease  bool   `json:"prerelease"`
 	PublishedAt string `json:"published_at"`
@@ -547,6 +561,7 @@ func (r apiRelease) toRelease() *Release {
 		ID:          r.ID,
 		TagName:     r.TagName,
 		Name:        r.Name,
+		Body:        r.Body,
 		Draft:       r.Draft,
 		Prerelease:  r.Prerelease,
 		PublishedAt: published,
