@@ -31,6 +31,11 @@ type Client struct {
 	// manifestVerifierErr is set when WithManifestVerifier was given a nil
 	// verifier; every manifest fetch then fails closed.
 	manifestVerifierErr error
+
+	artifactVerifier ArtifactVerifier
+	// artifactVerifierErr is set when WithArtifactVerifier was given a nil
+	// verifier; every download then fails closed.
+	artifactVerifierErr error
 }
 
 // Option configures a Client. Pass options to NewClient or NewClientWithHTTP.
@@ -116,9 +121,22 @@ type ArtifactVerifier interface {
 }
 
 // WithArtifactVerifier makes Download, DownloadToBytes and DownloadToFile
-// authenticate each asset against its detached signature. Stub: not yet wired in.
+// authenticate each asset against its detached signature. The signature is
+// fetched before the asset, from DownloadOptions.SignatureURL or, failing that,
+// next to the asset via v.SignatureName. A missing signature fails with
+// ErrSignatureMissing and a rejected one with ErrSignatureInvalid; verification
+// never silently falls back to an unauthenticated download. Without this option
+// behavior is unchanged. Independent of WithManifestVerifier: use either or both.
+//
+// While a download is being verified the destination receives no bytes (see
+// DownloadOptions.StreamUnverified).
 func WithArtifactVerifier(v ArtifactVerifier) Option {
-	return func(c *Client) {}
+	return func(c *Client) {
+		c.artifactVerifier, c.artifactVerifierErr = v, nil
+		if isNilInterface(v) {
+			c.artifactVerifierErr = &wrapped{sentinel: ErrInvalidVerifier, cause: errors.New("WithArtifactVerifier was given a nil verifier")}
+		}
+	}
 }
 
 type signatureURLKey struct{}
@@ -602,13 +620,22 @@ func (c *Client) fetchManifest(ctx context.Context, url string) ([]byte, error) 
 	}
 	sigURL, _ := ctx.Value(signatureURLKey{}).(string)
 	if sigURL == "" {
-		base := url
-		if i := strings.IndexAny(base, "?#"); i >= 0 {
-			base = base[:i]
-		}
-		base = base[strings.LastIndex(base, "/")+1:]
-		sigURL = siblingURL(url, c.manifestVerifier.SignatureName(base))
+		sigURL = siblingURL(url, c.manifestVerifier.SignatureName(lastPathSegment(url)))
 	}
+	sig, err := c.fetchSignature(ctx, sigURL)
+	if err != nil {
+		return nil, err
+	}
+	if err := c.manifestVerifier.Verify(ctx, body, sig); err != nil {
+		return nil, &wrapped{sentinel: ErrSignatureInvalid, cause: err}
+	}
+	return body, nil
+}
+
+// fetchSignature fetches a detached signature. A 404 means the release has no
+// signature, which is reported as ErrSignatureMissing so that enabling a
+// verifier can never degrade into an unauthenticated fetch.
+func (c *Client) fetchSignature(ctx context.Context, sigURL string) ([]byte, error) {
 	sig, err := c.fetchBody(ctx, sigURL)
 	if err != nil {
 		var st *HTTPStatusError
@@ -617,10 +644,16 @@ func (c *Client) fetchManifest(ctx context.Context, url string) ([]byte, error) 
 		}
 		return nil, err
 	}
-	if err := c.manifestVerifier.Verify(ctx, body, sig); err != nil {
-		return nil, &wrapped{sentinel: ErrSignatureInvalid, cause: err}
+	return sig, nil
+}
+
+// lastPathSegment returns the final path segment of rawURL, ignoring any query
+// string or fragment.
+func lastPathSegment(rawURL string) string {
+	if i := strings.IndexAny(rawURL, "?#"); i >= 0 {
+		rawURL = rawURL[:i]
 	}
-	return body, nil
+	return rawURL[strings.LastIndex(rawURL, "/")+1:]
 }
 
 // fetchBody GETs url and returns the body, applying the default API timeout when
