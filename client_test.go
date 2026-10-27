@@ -854,3 +854,68 @@ func TestLatestRelease_TagPrefixSkipsPrereleases(t *testing.T) {
 		t.Errorf("LatestRelease() = %q, want %q", tag, "v1.0.5")
 	}
 }
+
+func TestLatestRelease_IncludePrereleases(t *testing.T) {
+	const page = `[
+		{"id":1,"tag_name":"v1.1.0-rc.2","draft":false,"prerelease":true,"published_at":"2026-03-01T00:00:00Z","assets":[]},
+		{"id":2,"tag_name":"v1.1.0-rc.10","draft":false,"prerelease":true,"published_at":"2026-02-20T00:00:00Z","assets":[]},
+		{"id":3,"tag_name":"v2.0.0","draft":true,"prerelease":false,"published_at":"2026-02-15T00:00:00Z","assets":[]},
+		{"id":4,"tag_name":"v1.0.5","draft":false,"prerelease":false,"published_at":"2026-02-10T00:00:00Z","assets":[]},
+		{"id":5,"tag_name":"cli/v9.0.0","draft":false,"prerelease":false,"published_at":"2026-02-01T00:00:00Z","assets":[]}
+	]`
+
+	tests := []struct {
+		name    string
+		ctx     func() context.Context
+		wantTag string
+	}{
+		{
+			name:    "highest semver wins over publish order, drafts excluded",
+			ctx:     func() context.Context { return WithPrereleases(context.Background(), true) },
+			wantTag: "cli/v9.0.0",
+		},
+		{
+			name: "prefix combines with prereleases",
+			ctx: func() context.Context {
+				return WithPrereleases(WithTagPrefix(context.Background(), "v"), true)
+			},
+			wantTag: "v1.1.0-rc.10",
+		},
+		{
+			name: "order of options does not matter",
+			ctx: func() context.Context {
+				return WithTagPrefix(WithPrereleases(context.Background(), true), "v")
+			},
+			wantTag: "v1.1.0-rc.10",
+		},
+		{
+			name: "prefix alone still skips prereleases",
+			ctx: func() context.Context {
+				return WithTagPrefix(context.Background(), "v")
+			},
+			wantTag: "v1.0.5",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Query().Get("page") == "1" {
+					_, _ = w.Write([]byte(page))
+					return
+				}
+				_, _ = w.Write([]byte(`[]`))
+			}))
+			defer server.Close()
+
+			client := NewClient("")
+			client.baseURL = server.URL
+			tag, err := client.LatestRelease(tt.ctx(), "owner", "repo")
+			if err != nil {
+				t.Fatalf("LatestRelease() error = %v", err)
+			}
+			if tag != tt.wantTag {
+				t.Errorf("LatestRelease() = %q, want %q", tag, tt.wantTag)
+			}
+		})
+	}
+}
