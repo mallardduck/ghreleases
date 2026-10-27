@@ -7,8 +7,44 @@ on:
     branches: [ main ]
 
 jobs:
+  # Decide which jobs are needed. Pushes to main run everything; pull requests run
+  # only what their changed files can affect (see .github/scripts/changed-modules.sh).
+  # Skipped jobs count as passing, so require the "CI passed" job below, not the
+  # individual ones.
+  changes:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    outputs:
+      core: ${{ steps.route.outputs.core }}
+      pgp: ${{ steps.route.outputs.pgp }}
+      sigstore: ${{ steps.route.outputs.sigstore }}
+      integration: ${{ steps.route.outputs.integration }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+
+      - name: Self-test the routing rules
+        run: .github/scripts/changed-modules_test.sh
+
+      - name: Route
+        id: route
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          files=""
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            # An unreadable diff leaves this empty, which runs everything.
+            files=$(git diff --name-only "$BASE_SHA"...HEAD || true)
+          fi
+          printf '%s' "$files" | .github/scripts/changed-modules.sh | tee -a "$GITHUB_OUTPUT"
+
   test:
     name: Test
+    needs: changes
+    if: needs.changes.outputs.core == 'true'
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/rancher/ci-image/go1.26:latest
@@ -41,27 +77,64 @@ jobs:
           fail_ci_if_error: false
 
 
-  # pgp, sigstore and integration are separate Go modules, so `go test ./...` at the
-  # root never reaches them.
-  test-modules:
-    name: Test sub-modules
+  # pgp is a separate Go module, so `go test ./...` at the root never reaches it.
+  test-pgp:
+    name: Test pgp
+    needs: changes
+    if: needs.changes.outputs.pgp == 'true'
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/rancher/ci-image/go1.26:latest
+    defaults:
+      run:
+        working-directory: pgp
     steps:
       - name: Checkout code
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
-      - name: Test pgp, sigstore and integration
-        run: |
-          for m in pgp sigstore integration; do
-            echo "::group::$m"
-            (cd "$m" && go test -v -race ./...) || exit 1
-            echo "::endgroup::"
-          done
+      - name: Run tests
+        run: go test -v -race ./...
+
+  # sigstore is a separate Go module, so `go test ./...` at the root never reaches it.
+  test-sigstore:
+    name: Test sigstore
+    needs: changes
+    if: needs.changes.outputs.sigstore == 'true'
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/rancher/ci-image/go1.26:latest
+    defaults:
+      run:
+        working-directory: sigstore
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Run tests
+        run: go test -v -race ./...
+
+  # integration is a separate Go module, so `go test ./...` at the root never reaches it.
+  test-integration:
+    name: Test integration (real client + both verifiers)
+    needs: changes
+    if: needs.changes.outputs.integration == 'true'
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/rancher/ci-image/go1.26:latest
+    defaults:
+      run:
+        working-directory: integration
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Run tests
+        run: go test -v -race ./...
 
   test-crossplatform:
     name: Test
+    needs: changes
+    if: needs.changes.outputs.core == 'true'
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -88,7 +161,8 @@ jobs:
 
   build:
     name: Build
-    needs: [lint, test, test-modules, test-crossplatform]
+    needs: [changes, lint, test, test-crossplatform]
+    if: ${{ !cancelled() && !failure() && needs.changes.outputs.core == 'true' }}
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/rancher/ci-image/go1.26:latest
@@ -104,5 +178,23 @@ jobs:
           git diff --exit-code
           if [ $? -ne 0 ]; then
             echo "Generated files are not up to date"
+            exit 1
+          fi
+
+  # The single check to require in branch protection: it passes when every job that
+  # ran passed (skipped jobs are fine) and fails if any failed or was cancelled.
+  ci-ok:
+    name: CI passed
+    if: ${{ always() }}
+    needs: [changes, lint, test, test-crossplatform, test-pgp, test-sigstore, test-integration, build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check results
+        env:
+          RESULTS: ${{ toJSON(needs.*.result) }}
+        run: |
+          echo "$RESULTS"
+          if echo "$RESULTS" | grep -Eq '"(failure|cancelled)"'; then
+            echo "A required job failed or was cancelled"
             exit 1
           fi
