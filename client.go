@@ -101,6 +101,26 @@ func isNilInterface(v any) bool {
 	return false
 }
 
+// ArtifactVerifier authenticates a downloaded asset against a detached
+// signature (for example a Sigstore bundle or an OpenPGP .asc file), so the
+// asset itself - not just a checksum file next to it - is proven authentic.
+type ArtifactVerifier interface {
+	// SignatureName returns the asset name of the detached signature for the
+	// asset named artifactName (e.g. "tool.tar.gz" -> "tool.tar.gz.asc").
+	SignatureName(artifactName string) string
+
+	// Verify reports whether signature authenticates exactly the bytes read
+	// from artifact. It must read artifact to EOF; returning nil having read
+	// less is treated as a failure. Any non-nil error rejects the download.
+	Verify(ctx context.Context, artifact io.Reader, signature []byte) error
+}
+
+// WithArtifactVerifier makes Download, DownloadToBytes and DownloadToFile
+// authenticate each asset against its detached signature. Stub: not yet wired in.
+func WithArtifactVerifier(v ArtifactVerifier) Option {
+	return func(c *Client) {}
+}
+
 type signatureURLKey struct{}
 
 // WithSignatureURL returns a context telling the FetchChecksums* methods

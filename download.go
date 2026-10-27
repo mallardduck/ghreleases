@@ -5,9 +5,11 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 )
 
 // DownloadOptions configures asset download behavior.
@@ -17,6 +19,22 @@ type DownloadOptions struct {
 
 	// Context for cancellation (optional)
 	Context context.Context
+
+	// SignatureURL is the exact URL of the asset's detached signature when a
+	// verifier is configured via WithArtifactVerifier. Needed for GitHub API
+	// asset URLs, whose last path segment is an opaque ID. When empty, the
+	// signature is expected next to the asset (see ArtifactVerifier.SignatureName).
+	SignatureURL string
+
+	// StreamUnverified is an escape hatch. By default, when ExpectedHash is set
+	// or a verifier is configured, the destination receives no bytes until every
+	// check has passed. Setting this writes bytes to the destination as they
+	// arrive; the checks still run, but on failure the destination already holds
+	// unverified data and the caller must discard it.
+	StreamUnverified bool
+
+	// TempDir is where bytes are held until verified. Defaults to os.TempDir().
+	TempDir string
 }
 
 // DownloadResult contains the outcome of a download operation.
@@ -73,6 +91,14 @@ func (c *Client) Download(url string, w io.Writer, opts DownloadOptions) (*Downl
 		Hash: computedHash,
 		Size: size,
 	}, nil
+}
+
+// DownloadToFile downloads an asset to path, creating the file with perm only
+// after every requested check (ExpectedHash, signature) has passed. On any
+// failure path is left exactly as it was: an existing file is not replaced and
+// no partial or temporary file remains. Stub: not implemented yet.
+func (c *Client) DownloadToFile(url, path string, perm os.FileMode, opts DownloadOptions) (*DownloadResult, error) {
+	return nil, errors.New("DownloadToFile: not implemented")
 }
 
 // DownloadToBytes is a convenience wrapper that downloads to a byte slice.
