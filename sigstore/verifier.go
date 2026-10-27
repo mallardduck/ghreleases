@@ -48,7 +48,7 @@ func WithTrustedRoot(trustedRootJSON []byte) Option {
 // WithBundleSuffix overrides BundleSuffix for releases that name their bundle
 // differently (for example "<manifest>.bundle").
 func WithBundleSuffix(suffix string) Option {
-	return func(v *Verifier) {} // stub: not implemented yet
+	return func(v *Verifier) { v.bundleSuffix = suffix }
 }
 
 // WithInsecureSubjectPattern is an escape hatch: it lets NewVerifier accept a
@@ -64,6 +64,7 @@ func WithInsecureSubjectPattern() Option {
 type Verifier struct {
 	id              Identity
 	trustedRootJSON []byte
+	bundleSuffix    string
 }
 
 // NewVerifier validates the pinned identity and returns a Verifier.
@@ -74,16 +75,20 @@ func NewVerifier(id Identity, opts ...Option) (*Verifier, error) {
 	if _, err := regexp.Compile(id.SubjectRegexp); err != nil {
 		return nil, fmt.Errorf("sigstore: invalid SubjectRegexp: %w", err)
 	}
-	v := &Verifier{id: id}
+	v := &Verifier{id: id, bundleSuffix: BundleSuffix}
 	for _, opt := range opts {
 		opt(v)
+	}
+	if v.bundleSuffix == "" {
+		// An empty suffix would point the bundle lookup at the manifest itself.
+		return nil, errors.New("sigstore: bundle suffix must not be empty")
 	}
 	return v, nil
 }
 
 // SignatureName implements ghrelease.ManifestVerifier.
 func (v *Verifier) SignatureName(manifestName string) string {
-	return manifestName + BundleSuffix
+	return manifestName + v.bundleSuffix
 }
 
 func (v *Verifier) trustedRoot() (root.TrustedMaterial, error) {
