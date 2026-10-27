@@ -16,6 +16,11 @@ type ReleaseFilter struct {
 	// TagPrefix restricts results to releases whose tag starts with this string.
 	// An empty prefix disables filtering and preserves the default behavior.
 	TagPrefix string
+
+	// IncludePrereleases makes LatestRelease consider prereleases and return
+	// the highest semver tag rather than the most recently published one.
+	// Drafts are always excluded.
+	IncludePrereleases bool
 }
 
 // WithTagPrefix returns a context that instructs LatestRelease to scan all
@@ -30,6 +35,11 @@ type ReleaseFilter struct {
 //	tag, err := client.LatestRelease(ctx, "rancher", "ob-charts-tool")
 func WithTagPrefix(ctx context.Context, prefix string) context.Context {
 	return context.WithValue(ctx, releaseFilterKey{}, ReleaseFilter{TagPrefix: prefix})
+}
+
+// WithPrereleases is a stub; the real behavior lands in a follow-up commit.
+func WithPrereleases(ctx context.Context, include bool) context.Context {
+	return ctx
 }
 
 func releaseFilterFromContext(ctx context.Context) (ReleaseFilter, bool) {
