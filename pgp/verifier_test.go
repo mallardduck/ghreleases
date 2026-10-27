@@ -177,10 +177,11 @@ func TestVerifier_SignerNotTrusted(t *testing.T) {
 
 func TestNewVerifier_RequiresKeys(t *testing.T) {
 	for name, kr := range map[string][]byte{
-		"nil keyring":          nil,
-		"empty keyring":        {},
-		"garbage keyring":      []byte("not a keyring"),
-		"signature, not a key": fixture(t, linuxSum+".asc"),
+		"nil keyring":                   nil,
+		"empty keyring":                 {},
+		"garbage keyring":               []byte("not a keyring"),
+		"armored block holding no keys": []byte("-----BEGIN PGP PUBLIC KEY BLOCK-----\n\n-----END PGP PUBLIC KEY BLOCK-----\n"),
+		"signature, not a key":          fixture(t, linuxSum+".asc"),
 	} {
 		if _, err := NewVerifier(kr); err == nil {
 			t.Errorf("NewVerifier(%s) = nil error, want refusal: a keyring with no keys proves nothing", name)
