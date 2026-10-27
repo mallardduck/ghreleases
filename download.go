@@ -194,16 +194,7 @@ func startVerify(ctx context.Context, v SignatureVerifier, sig []byte) *verifyRu
 	pr, pw := io.Pipe()
 	r := &verifyRun{pw: pw, done: make(chan error, 1)}
 	go func() {
-		var err error
-		func() {
-			// A panicking verifier must fail the download, not crash the process.
-			defer func() {
-				if p := recover(); p != nil {
-					err = fmt.Errorf("verifier panicked: %v", p)
-				}
-			}()
-			err = v.Verify(ctx, pr, sig)
-		}()
+		err := safeVerify(ctx, v, pr, sig)
 		// Whatever the verdict, the verifier is done with the stream: unblock the
 		// writer so one that returned early cannot stall the download.
 		_ = pr.CloseWithError(errVerifierFinished)

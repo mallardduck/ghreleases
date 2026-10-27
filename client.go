@@ -616,10 +616,39 @@ func (c *Client) fetchManifest(ctx context.Context, url string) ([]byte, error) 
 	if err != nil {
 		return nil, err
 	}
-	if err := c.manifestVerifier.Verify(ctx, bytes.NewReader(body), sig); err != nil {
+	// The manifest is in memory, so count what the verifier reads: accepting
+	// after reading less than all of it authenticates nothing.
+	cr := &countingReader{r: bytes.NewReader(body)}
+	if err := safeVerify(ctx, c.manifestVerifier, cr, sig); err != nil {
 		return nil, &wrapped{sentinel: ErrSignatureInvalid, cause: err}
 	}
+	if cr.n != int64(len(body)) {
+		return nil, &wrapped{sentinel: ErrSignatureInvalid, cause: errVerifierFinished}
+	}
 	return body, nil
+}
+
+// countingReader counts the bytes read through it.
+type countingReader struct {
+	r io.Reader
+	n int64
+}
+
+func (c *countingReader) Read(p []byte) (int, error) {
+	n, err := c.r.Read(p)
+	c.n += int64(n)
+	return n, err
+}
+
+// safeVerify calls v.Verify, turning a panic into an error: a panicking
+// verifier must fail verification, not crash the caller or let content through.
+func safeVerify(ctx context.Context, v SignatureVerifier, content io.Reader, sig []byte) (err error) {
+	defer func() {
+		if p := recover(); p != nil {
+			err = fmt.Errorf("verifier panicked: %v", p)
+		}
+	}()
+	return v.Verify(ctx, content, sig)
 }
 
 // fetchSignature fetches a detached signature. A 404 means the release has no
