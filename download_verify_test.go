@@ -26,19 +26,18 @@ var artifactBody = bytes.Repeat([]byte("0123456789abcdef"), 3<<16) // 3 MiB
 type fakeArtifactVerifier struct {
 	mu sync.Mutex
 
-	readLimit int64        // if > 0, read only this many bytes before deciding
-	early     bool         // decide without reading anything
-	earlyErr  error        // verdict when early (nil means "accept")
-	onVerify  func()       // called before any read
-	got       []byte       // everything the verifier read
-	sig       []byte       // signature it was given
-	calls     int          // times Verify was called
-	ctxErr    func() error // set by Verify: reports ctx.Err() at the end
+	readLimit int64  // if > 0, read only this many bytes before deciding
+	early     bool   // decide without reading anything
+	earlyErr  error  // verdict when early (nil means "accept")
+	onVerify  func() // called before any read
+	got       []byte // everything the verifier read
+	sig       []byte // signature it was given
+	calls     int    // times Verify was called
 }
 
 func (f *fakeArtifactVerifier) SignatureName(name string) string { return name + ".sig" }
 
-func (f *fakeArtifactVerifier) Verify(ctx context.Context, r io.Reader, sig []byte) error {
+func (f *fakeArtifactVerifier) Verify(_ context.Context, r io.Reader, sig []byte) error {
 	f.mu.Lock()
 	f.calls++
 	f.sig = append([]byte(nil), sig...)
@@ -276,7 +275,7 @@ func TestDownload_NoArtifactVerifierFetchesNoSignature(t *testing.T) {
 func TestDownload_ContextCancelMidStreamWritesNothing(t *testing.T) {
 	started := make(chan struct{})
 	mux := http.NewServeMux()
-	mux.HandleFunc("/tool.tar.gz.sig", func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("good")) })
+	mux.HandleFunc("/tool.tar.gz.sig", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("good")) })
 	mux.HandleFunc("/tool.tar.gz", func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write(artifactBody[:64<<10])
 		w.(http.Flusher).Flush()
@@ -328,7 +327,7 @@ func TestDownload_ArtifactVerifierWithExpectedHash(t *testing.T) {
 			c := NewClient("", WithArtifactVerifier(&fakeArtifactVerifier{}))
 			var buf bytes.Buffer
 			_, err := c.Download(srv.URL+"/tool.tar.gz", &buf, DownloadOptions{ExpectedHash: tt.hash})
-			if !errors.Is(err, tt.wantErr) && !(tt.wantErr == nil && err == nil) {
+			if !errors.Is(err, tt.wantErr) && (tt.wantErr != nil || err != nil) {
 				t.Fatalf("err = %v, want %v", err, tt.wantErr)
 			}
 			if tt.wantErr != nil && buf.Len() != 0 {
@@ -578,7 +577,7 @@ func TestWithArtifactVerifier_NilFailsClosed(t *testing.T) {
 func TestManifestAndArtifactVerifiersAreIndependent(t *testing.T) {
 	mux := http.NewServeMux()
 	serve := func(path, body string) {
-		mux.HandleFunc(path, func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte(body)) })
+		mux.HandleFunc(path, func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(body)) })
 	}
 	serve("/assets/301", verifyManifest) // manifest
 	serve("/assets/302", "good")         // manifest signature

@@ -35,7 +35,7 @@ func (f *fakeVerifier) Verify(_ context.Context, content io.Reader, signature []
 func verifyServer(t *testing.T, sig *string) *httptest.Server {
 	t.Helper()
 	mux := http.NewServeMux()
-	mux.HandleFunc("/checksums.txt", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/checksums.txt", func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(verifyManifest))
 	})
 	mux.HandleFunc("/checksums.txt.sig", func(w http.ResponseWriter, r *http.Request) {
@@ -120,8 +120,8 @@ func TestFetchChecksums_SignatureURLOverride(t *testing.T) {
 	// GitHub API asset URLs end in an opaque ID, so the signature cannot be
 	// found by name next to the manifest; callers pass its exact URL.
 	mux := http.NewServeMux()
-	mux.HandleFunc("/assets/101", func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte(verifyManifest)) })
-	mux.HandleFunc("/assets/102", func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("good")) })
+	mux.HandleFunc("/assets/101", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(verifyManifest)) })
+	mux.HandleFunc("/assets/102", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("good")) })
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 

@@ -16,7 +16,7 @@ import (
 // wrapped in a non-nil interface.
 func TestWithManifestVerifier_NilFailsClosed(t *testing.T) {
 	var requests int32
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		atomic.AddInt32(&requests, 1)
 		_, _ = w.Write([]byte(verifyManifest))
 	}))

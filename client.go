@@ -104,7 +104,7 @@ func isNilInterface(v any) bool {
 		return true
 	}
 	switch rv := reflect.ValueOf(v); rv.Kind() {
-	case reflect.Ptr, reflect.Map, reflect.Slice, reflect.Func, reflect.Chan, reflect.Interface:
+	case reflect.Pointer, reflect.Map, reflect.Slice, reflect.Func, reflect.Chan, reflect.Interface:
 		return rv.IsNil()
 	}
 	return false

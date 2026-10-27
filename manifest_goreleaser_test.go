@@ -42,8 +42,8 @@ func goreleaserServer(t *testing.T, manifest, bundle []byte) *httptest.Server {
 	)
 	var srv *httptest.Server
 	mux := http.NewServeMux()
-	mux.HandleFunc("/repos/goreleaser/goreleaser/releases/tags/v2.19.0", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintf(w, `{"tag_name":"v2.19.0","assets":[
+	mux.HandleFunc("/repos/goreleaser/goreleaser/releases/tags/v2.19.0", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = fmt.Fprintf(w, `{"tag_name":"v2.19.0","assets":[
 			{"name":"checksums.txt","url":"%[1]s/repos/goreleaser/goreleaser/releases/assets/%[2]s","size":%[4]d},
 			{"name":"checksums.txt.sigstore.json","url":"%[1]s/repos/goreleaser/goreleaser/releases/assets/%[3]s","size":%[5]d}]}`,
 			srv.URL, manifestID, bundleID, len(manifest), len(bundle))
@@ -169,8 +169,8 @@ func TestFetchMultiHashChecksums_VerifiesManifestOnly(t *testing.T) {
 	}
 	var sigRequests []string
 	mux := http.NewServeMux()
-	mux.HandleFunc("/checksums", func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write(manifest) })
-	mux.HandleFunc("/checksums_hashes_order", func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write(order) })
+	mux.HandleFunc("/checksums", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write(manifest) })
+	mux.HandleFunc("/checksums_hashes_order", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write(order) })
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		sigRequests = append(sigRequests, r.URL.Path)
 		if r.URL.Path == "/checksums.bundle" {
