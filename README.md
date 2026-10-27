@@ -1,6 +1,8 @@
 # ghreleases
 
-A zero-dependency Go package for fetching and extracting GitHub release assets.
+A Go package for fetching and extracting GitHub release assets. The core module has
+**zero dependencies** (standard library only); the optional signature verifiers live in
+separate modules that bring their own - see [Authenticating checksum manifests](#authenticating-checksum-manifests-optional).
 
 ## Features
 
@@ -9,7 +11,8 @@ A zero-dependency Go package for fetching and extracting GitHub release assets.
 - **Checksum Validation** - Parse and verify SHA-256 checksums
 - **Archive Extraction** - Extract from .tar.gz, .tgz, .zip, and .gz archives
 - **Streaming Downloads** - Efficient downloads with built-in hash computation
-- **Zero Dependencies** - Standard library only for maximum portability
+- **Zero Dependencies (core module)** - Standard library only for maximum portability
+- **Optional Signature Verification** - Authenticate checksum manifests with pluggable verifiers (Sigstore, OpenPGP, or your own); off by default
 
 ## Installation
 
@@ -108,6 +111,39 @@ for _, asset := range release.Assets {
     fmt.Printf("%s - %d bytes\n", asset.Name, asset.Size)
 }
 ```
+
+#### Authenticating checksum manifests (optional)
+
+A checksum file published next to the binary proves the download is intact, not that it is
+authentic: an attacker who can replace the release can replace both. A `ManifestVerifier`
+checks a detached signature over the checksum file *before* any checksum in it is trusted.
+
+```go
+client := ghrelease.NewClient(token, ghrelease.WithManifestVerifier(v))
+checksums, err := client.FetchChecksums(ctx, checksumsURL) // also fetches and checks the signature
+```
+
+- **Off by default.** Without `WithManifestVerifier` behavior is unchanged and no signature is fetched.
+- **Fails closed.** Once enabled, a missing signature returns `ErrSignatureMissing` and a rejected one
+  returns `ErrSignatureInvalid`; the client never falls back to the unsigned checksums.
+- **Opaque asset URLs.** GitHub API asset URLs end in a numeric ID, so the signature cannot be found by
+  name. Find it in `Release.Assets` via `v.SignatureName(...)` and pass `WithSignatureURL(ctx, url)`.
+- **Your choice of verifier.** `ManifestVerifier` is a two-method interface. Implement it with whatever
+  library or tool you prefer, or use one of the ready-made modules below.
+
+Ready-made verifiers are **separate Go modules** so the core stays dependency-free. Importing one adds
+its dependencies to *your* build; pick the lightest that matches how your releases are signed:
+
+| Module | Verifies | Added to your build |
+|---|---|---|
+| `github.com/mallardduck/ghreleases/pgp` | Detached OpenPGP signatures (`.asc`), e.g. Helm | `ProtonMail/go-crypto` and its small `x/*` dependencies (9 modules, ~5 MB binary) |
+| `github.com/mallardduck/ghreleases/sigstore` | Keyless Sigstore bundles (`.sigstore.json`), e.g. goreleaser, syft, flux | `sigstore-go` and its TUF, transparency-log and gRPC stack (hundreds of modules in the graph, ~24 MB binary) |
+
+Both require a recent Go toolchain (their `go.mod` is newer than the core's) and refuse to run without
+an explicit trust root: a keyring for `pgp`, a pinned signer identity for `sigstore`. Weakening those
+checks (for example `sigstore.WithInsecureSubjectPattern`) is possible but must be spelled out.
+
+See the package documentation on pkg.go.dev for runnable examples.
 
 #### Fetching Checksums
 
@@ -496,6 +532,8 @@ if errors.Is(err, ghrelease.ErrReleaseNotFound) && errors.As(err, &se) {
 - `ErrUnsupportedFormat` - Unsupported archive format
 - `ErrChecksumFormat` - Malformed multi-hash checksum file
 - `ErrHostNotAllowed` - Request or redirect blocked by `WithAllowedHosts`
+- `ErrSignatureMissing` - A `ManifestVerifier` is configured but the manifest's signature was not found
+- `ErrSignatureInvalid` - A `ManifestVerifier` rejected the manifest's signature
 
 ## Testing
 
@@ -512,10 +550,13 @@ MIT - See LICENSE file for details.
 
 ## Contributing
 
-This package is designed to be stable and dependency-free. Contributions should maintain:
+The core module is designed to be stable and dependency-free. Contributions to it should maintain:
 
 - Zero external dependencies
 - Standard library only
 - Comprehensive test coverage
 - Clear error messages
 - Simple, focused APIs
+
+Optional integrations that need third-party libraries (such as the signature verifiers) belong in
+their own module under a subdirectory, so importing the core never pulls them in.
