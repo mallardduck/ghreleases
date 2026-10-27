@@ -15,9 +15,9 @@ import (
 // get one is ignoring NewVerifier's error: that yields a typed-nil pointer
 // wrapped in a non-nil interface.
 func TestWithManifestVerifier_NilFailsClosed(t *testing.T) {
-	var requests atomic.Int32
+	var requests int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requests.Add(1)
+		atomic.AddInt32(&requests, 1)
 		_, _ = w.Write([]byte(verifyManifest))
 	}))
 	defer srv.Close()
@@ -36,7 +36,7 @@ func TestWithManifestVerifier_NilFailsClosed(t *testing.T) {
 			},
 		} {
 			t.Run(name+"/"+method, func(t *testing.T) {
-				before := requests.Load()
+				before := atomic.LoadInt32(&requests)
 				c := NewClient("", WithManifestVerifier(v))
 
 				var (
@@ -58,7 +58,7 @@ func TestWithManifestVerifier_NilFailsClosed(t *testing.T) {
 				if sums != nil {
 					t.Error("checksums returned although the configured verifier is unusable")
 				}
-				if got := requests.Load() - before; got != 0 {
+				if got := atomic.LoadInt32(&requests) - before; got != 0 {
 					t.Errorf("made %d request(s); a misconfigured verifier must fail before any network I/O", got)
 				}
 			})
