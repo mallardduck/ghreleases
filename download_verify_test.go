@@ -204,6 +204,23 @@ func TestDownload_VerifierThatSkipsBytesIsRejected(t *testing.T) {
 	}
 }
 
+// A panicking verifier must fail the download, not crash the process or let
+// the asset through.
+func TestDownload_PanickingVerifierFailsClosed(t *testing.T) {
+	srv := newArtifactServer(t, artifactBody, strp("good"))
+	v := &fakeArtifactVerifier{onVerify: func() { panic("boom") }}
+	c := NewClient("", WithArtifactVerifier(v))
+
+	var buf bytes.Buffer
+	res, err := c.Download(srv.URL+"/tool.tar.gz", &buf, DownloadOptions{})
+	if !errors.Is(err, ErrSignatureInvalid) || res != nil {
+		t.Fatalf("got (%v, %v), want (nil, ErrSignatureInvalid)", res, err)
+	}
+	if buf.Len() != 0 {
+		t.Errorf("destination received %d bytes", buf.Len())
+	}
+}
+
 // A verifier that rejects immediately never drains its input; the download
 // must abort rather than block forever on the unread stream.
 func TestDownload_EarlyRejectDoesNotHang(t *testing.T) {
