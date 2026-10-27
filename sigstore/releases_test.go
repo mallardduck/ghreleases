@@ -175,6 +175,7 @@ func TestNewVerifier_RejectsUnpinnedIdentity(t *testing.T) {
 		`^.*$`,
 		`github\.com/goreleaser/goreleaser`, // unanchored: also matches evil.example/github.com/goreleaser/goreleaser
 		`^https://github\.com/goreleaser/goreleaser`, // anchored at the start only: matches ".../goreleaser-evil/..."
+		`^https://github\.com/goreleaser/goreleaser\$`, // escaped dollar is a literal, not an end anchor
 	} {
 		if _, err := NewVerifier(Identity{SubjectRegexp: re, Issuer: ghIssuer}, root); err == nil {
 			t.Errorf("NewVerifier accepted permissive SubjectRegexp %q", re)
