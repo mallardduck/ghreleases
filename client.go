@@ -25,6 +25,8 @@ type Client struct {
 	// allowedHosts, when non-empty, restricts every request (and redirect) to
 	// these hosts and their subdomains, plus the base URL host.
 	allowedHosts []string
+
+	manifestVerifier ManifestVerifier
 }
 
 // Option configures a Client. Pass options to NewClient or NewClientWithHTTP.
@@ -50,6 +52,34 @@ func WithAllowedHosts(hosts ...string) Option {
 			}
 		}
 	}
+}
+
+// ManifestVerifier authenticates a checksum manifest against a detached
+// signature (for example a Sigstore bundle), closing the gap that a checksum
+// file published next to the binary proves integrity but not authenticity.
+type ManifestVerifier interface {
+	// SignatureName returns the asset name of the detached signature for the
+	// manifest asset named manifestName (e.g. "checksums.txt" ->
+	// "checksums.txt.sigstore.json").
+	SignatureName(manifestName string) string
+
+	// Verify reports whether signature authenticates exactly these manifest
+	// bytes. Any non-nil error rejects the manifest.
+	Verify(ctx context.Context, manifest, signature []byte) error
+}
+
+// WithManifestVerifier will make the FetchChecksums* methods authenticate each
+// checksum manifest before parsing it.
+func WithManifestVerifier(v ManifestVerifier) Option {
+	return func(c *Client) { c.manifestVerifier = v }
+}
+
+type signatureURLKey struct{}
+
+// WithSignatureURL returns a context telling the FetchChecksums* methods
+// exactly where the manifest's detached signature lives.
+func WithSignatureURL(ctx context.Context, url string) context.Context {
+	return context.WithValue(ctx, signatureURLKey{}, url)
 }
 
 // Release represents a GitHub release.
