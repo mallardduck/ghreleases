@@ -131,6 +131,26 @@ checksums, err := client.FetchChecksums(ctx, checksumsURL) // also fetches and c
 - **Your choice of verifier.** `SignatureVerifier` is a two-method interface. Implement it with whatever
   library or tool you prefer, or use one of the ready-made modules below.
 
+The same interface verifies the downloaded asset itself, which is what projects that sign their
+tarballs (rather than, or as well as, a checksum file) need. Manifest and asset verification are
+separate options, so you can use either or both, with the same verifier or different ones:
+
+```go
+client := ghrelease.NewClient(token,
+    ghrelease.WithManifestVerifier(v), // checksums.txt is signed
+    ghrelease.WithArtifactVerifier(v), // and/or each asset is signed
+)
+// The signature is fetched first (a missing one fails before the asset is downloaded), then the
+// asset is streamed through the verifier. Nothing reaches your writer until it passes.
+result, err := client.Download(assetURL, &buf, ghrelease.DownloadOptions{
+    SignatureURL: sigAssetURL, // needed for opaque GitHub API asset URLs
+})
+```
+
+Verifiers must read all of the content they accept: one that returns success having read only part
+of it is rejected, and one that panics fails closed. A nil verifier is an error
+(`ErrInvalidVerifier`), never a silent downgrade to no verification.
+
 Ready-made verifiers are **separate Go modules** so the core stays dependency-free. Importing one adds
 its dependencies to *your* build; pick the lightest that matches how your releases are signed:
 
@@ -266,7 +286,24 @@ defer cancel()
 result, err := client.Download(assetURL, &buf, ghrelease.DownloadOptions{
     Context: ctx,
 })
+
+// Download to a file: it only appears at path once every check has passed, and a
+// failure leaves any existing file untouched (no partial or temporary file remains)
+result, err := client.DownloadToFile(assetURL, "/usr/local/bin/tool", 0o755, ghrelease.DownloadOptions{
+    ExpectedHash: "abc123...",
+})
 ```
+
+#### Nothing is written until it is verified
+
+When `ExpectedHash` is set or an artifact verifier is configured (see below), `Download` holds the
+asset in a temporary file (`DownloadOptions.TempDir`, default `os.TempDir()`) and writes to your
+`io.Writer` only after every check has passed, so a failed check never leaves unverified bytes in
+your destination. With nothing to verify, bytes stream straight through.
+
+`DownloadOptions.StreamUnverified` is the explicit escape hatch: bytes are written as they arrive,
+the checks still run, but on failure the destination already holds unverified data and is yours to
+discard. `DownloadToBytes` always streams into its buffer, since the buffer is dropped on failure.
 
 ### Archive Extraction
 
