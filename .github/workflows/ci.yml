@@ -47,7 +47,7 @@ jobs:
     if: needs.changes.outputs.core == 'true'
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/rancher/ci-image/go1.26:latest
+      image: ghcr.io/rancher/ci-image/go1.27:latest
     steps:
       - name: Checkout code
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -84,7 +84,7 @@ jobs:
     if: needs.changes.outputs.pgp == 'true'
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/rancher/ci-image/go1.26:latest
+      image: ghcr.io/rancher/ci-image/go1.27:latest
     defaults:
       run:
         working-directory: pgp
@@ -102,7 +102,7 @@ jobs:
     if: needs.changes.outputs.sigstore == 'true'
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/rancher/ci-image/go1.26:latest
+      image: ghcr.io/rancher/ci-image/go1.27:latest
     defaults:
       run:
         working-directory: sigstore
@@ -120,7 +120,7 @@ jobs:
     if: needs.changes.outputs.integration == 'true'
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/rancher/ci-image/go1.26:latest
+      image: ghcr.io/rancher/ci-image/go1.27:latest
     defaults:
       run:
         working-directory: integration
@@ -165,7 +165,7 @@ jobs:
     if: ${{ !cancelled() && !failure() && needs.changes.outputs.core == 'true' }}
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/rancher/ci-image/go1.26:latest
+      image: ghcr.io/rancher/ci-image/go1.27:latest
     steps:
       - name: Checkout code
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
