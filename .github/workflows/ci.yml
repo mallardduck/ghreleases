@@ -131,28 +131,41 @@ jobs:
       - name: Run tests
         run: go test -v -race ./...
 
+  # Runs every Go module on macOS and Windows. Each entry is skipped unless its
+  # routing output is true (core for the root module, otherwise the module's own).
   test-crossplatform:
-    name: Test
+    name: Test ${{ matrix.target.module }} (${{ matrix.os }})
     needs: changes
-    if: needs.changes.outputs.core == 'true'
+    if: needs.changes.outputs.core == 'true' || needs.changes.outputs.pgp == 'true' || needs.changes.outputs.sigstore == 'true'
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         os: [macos-latest, windows-latest]
-        go: ['1.26']
+        go: ['1.27']
+        target:
+          - { module: '.', output: core }
+          - { module: pgp, output: pgp }
+          - { module: sigstore, output: sigstore }
+    defaults:
+      run:
+        working-directory: ${{ matrix.target.module }}
     steps:
       - name: Checkout code
+        if: needs.changes.outputs[matrix.target.output] == 'true'
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Set up Go
+        if: needs.changes.outputs[matrix.target.output] == 'true'
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version: ${{ matrix.go }}
 
       - name: Download dependencies
+        if: needs.changes.outputs[matrix.target.output] == 'true'
         run: go mod download
 
       - name: Run tests
+        if: needs.changes.outputs[matrix.target.output] == 'true'
         run: go test -v -race ./...
 
   lint:
